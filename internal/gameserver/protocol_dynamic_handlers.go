@@ -528,6 +528,7 @@ func hRodCutLine(ctx *Ctx) ([]byte, bool) {
 	st.Resolved = true
 	st.InWater = false
 	st.NeedBite = false
+	resetMarineLayerLocked(st)
 	st.mu.Unlock()
 	if pending != nil {
 		srv.bumpFishingCounter(ctx.Sess.Userid, "escapes")
@@ -689,6 +690,7 @@ func sonarRollContext(srv *Server, sess *Session, key string, now time.Time) fis
 		c.lureAction = st.LureAction
 		c.lureMask = st.LureMotionMask
 		c.lureSpeed = st.ReelSetting
+		c.marineLayer, c.marineLayerKnown = srv.marineContextLayer(st)
 		c.skill = st.Bonus
 		if st.HasCastPos {
 			c.x, c.z, c.hasPos = st.CastPosX, st.CastPosZ, true
