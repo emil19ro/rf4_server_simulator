@@ -3381,13 +3381,13 @@ func (s *Server) fishLandedText(f *RolledFish, newRecord bool) string {
 	if s == nil || f == nil {
 		return ""
 	}
-	name := s.speciesZhName(s.dbCtx(), f.Species)
+	name := s.speciesChatName(s.dbCtx(), f.Species)
 	weight := formatWeightG(f.WeightG)
 	switch {
 	case f.Grade >= 2:
-		text := fmt.Sprintf("钓获%s：%s %s", gradeZhName(f.Grade), name, weight)
+		text := fmt.Sprintf(s.tr("钓获%s：%s %s", "Caught %s: %s %s"), s.gradeChatName(f.Grade), name, weight)
 		if newRecord {
-			text += "（新纪录）"
+			text += s.tr("（新纪录）", " (new record)")
 		}
 		return text
 	}
@@ -3407,12 +3407,12 @@ func (s *Server) fishReleasedText(f *RolledFish) string {
 	if s == nil || f == nil {
 		return ""
 	}
-	name := s.speciesZhName(s.dbCtx(), f.Species)
+	name := s.speciesChatName(s.dbCtx(), f.Species)
 	weight := formatWeightG(f.WeightG)
 	if f.Grade >= 3 {
-		return fmt.Sprintf("放生%s：%s %s", gradeZhName(f.Grade), name, weight)
+		return fmt.Sprintf(s.tr("放生%s：%s %s", "Released %s: %s %s"), s.gradeChatName(f.Grade), name, weight)
 	}
-	return fmt.Sprintf("放生：%s %s", name, weight)
+	return fmt.Sprintf(s.tr("放生：%s %s", "Released: %s %s"), name, weight)
 }
 
 // fishEscapeText 跑鱼提示文本；f 为 nil 时只提示原因。
@@ -3447,7 +3447,7 @@ func fishAnnouncementKind(grade int64) int {
 // 由客户端模板补：k25 蓝冠“超级稀有鱼{0},{1}”（深橘红）、k26 奖杯
 // “稀有鱼 {0} ， {1}”（橘黄）、kind3 达标无前缀（蓝色）。
 func (s *Server) fishLandedKV(f *RolledFish) *proto.Value {
-	name := s.speciesZhName(s.dbCtx(), f.Species)
+	name := s.speciesChatName(s.dbCtx(), f.Species)
 	if name == "" {
 		name = f.Species
 	}
@@ -3518,6 +3518,18 @@ var fishEscapeTaunts = []string{
 	"打龟佬",
 }
 
+// fishEscapeTauntsEN 英文服的跑鱼语气词池。
+var fishEscapeTauntsEN = []string{
+	"So close",
+	"Butterfingers",
+	"Not again",
+	"Smarter than you",
+	"That one got away",
+	"Better luck next cast",
+	"Line check, anyone",
+	"All that for nothing",
+}
+
 // notifyFishEscape 跑鱼提示：类型3（蓝色 KV 模板），文案带随机语气词，
 // 重量走键2（客户端模板句尾自动显示“X 克/公斤”）。
 // fish_escape_taunt=0 或没有在途鱼体时回退官方原因模板。
@@ -3540,21 +3552,28 @@ func (s *Server) notifyFishEscape(sess *Session, f *RolledFish, reason string) {
 		if f.WeightG > 0 {
 			weight = f.WeightG
 		}
-		name = s.speciesZhName(s.dbCtx(), f.Species)
+		name = s.speciesChatName(s.dbCtx(), f.Species)
 		if name == "" {
 			name = f.Species
 		}
 		if f.Grade >= 4 {
-			tier = "超级稀有 "
+			tier = s.tr("超级稀有 ", "super rare ")
 		} else if f.Grade == 3 {
-			tier = "稀有 "
+			tier = s.tr("稀有 ", "rare ")
 		}
 	}
-	taunt := fishEscapeTaunts[rand.Intn(len(fishEscapeTaunts))]
 	// 客户端 KV 模板恒在文案末尾追加“X 克/公斤”（缺键2 显示“0 克”），
 	// 服务端无法把重量插到句子中间。想让重量紧跟鱼名，只能把鱼名放到句尾：
 	//   "这都能跑！你的 稀有 丁鱵" + 客户端追加 " 1.5 千克"
-	text := "你的 " + tier + name + "，跑掉了，" + taunt + "！"
+	var text string
+	if s.langEN() {
+		taunt := fishEscapeTauntsEN[rand.Intn(len(fishEscapeTauntsEN))]
+		// 同样把鱼名放句尾："So close! Lost your rare Tench" + 客户端追加 " 1.5 kg"
+		text = taunt + "! Lost your " + tier + name
+	} else {
+		taunt := fishEscapeTaunts[rand.Intn(len(fishEscapeTaunts))]
+		text = "你的 " + tier + name + "，跑掉了，" + taunt + "！"
+	}
 	sess.pushChatProbe(27, 3, "", fishTVKv(text, weight))
 }
 

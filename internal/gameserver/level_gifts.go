@@ -27,33 +27,34 @@ type levelGift struct {
 	ItemID string
 	Qty    int64
 	Name   string
+	NameEn string // 英文服播报名
 }
 
 // levelGiftTable 2~10 级官方礼物（全服统一，与钓法无关）。
 var levelGiftTable = map[int64][]levelGift{
-	2:  {{"caddisfly", 30, "毛翅目幼虫"}},
-	3:  {{"porridge_pearl_barley", 30, "大麦粥"}},
-	4:  {{"porridge_semolina", 30, "碎麦米粥"}},
-	5:  {{"clas_20059", 1, "鱼钩 CHK201 S16"}},
-	6:  {{"worm_01", 30, "蚯蚓"}},
-	7:  {{"mono_15094", 1, "鱼线 Indiana 8LB 100M"}},
-	8:  {{"dough_sweet", 30, "甜面团"}},
-	9:  {{"clas_20177", 1, "鱼钩 Happy Hook CL-12 S16"}},
-	10: {{"naiad", 15, "蜉蝣幼虫"}},
+	2:  {{"caddisfly", 30, "毛翅目幼虫", "Caddisfly larvae"}},
+	3:  {{"porridge_pearl_barley", 30, "大麦粥", "Pearl barley porridge"}},
+	4:  {{"porridge_semolina", 30, "碎麦米粥", "Semolina porridge"}},
+	5:  {{"clas_20059", 1, "鱼钩 CHK201 S16", "Hook CHK201 S16"}},
+	6:  {{"worm_01", 30, "蚯蚓", "Worm"}},
+	7:  {{"mono_15094", 1, "鱼线 Indiana 8LB 100M", "Line Indiana 8LB 100M"}},
+	8:  {{"dough_sweet", 30, "甜面团", "Sweet dough"}},
+	9:  {{"clas_20177", 1, "鱼钩 Happy Hook CL-12 S16", "Hook Happy Hook CL-12 S16"}},
+	10: {{"naiad", 15, "蜉蝣幼虫", "Mayfly larvae"}},
 }
 
 // levelGiftFloatSet11 11 级浮子钓法套（官方画面：竿+线+漂+钩）。
 var levelGiftFloatSet11 = []levelGift{
-	{"tele_10112_5", 1, "Comfort Telescopic 5 竿"},
-	{"mono_15212", 1, "Mono Original 11.5LB 鱼线"},
-	{"bob_25164", 1, "Bob Original 4G YR 浮漂"},
-	{"clas_20090", 1, "鱼钩 CHK401 S14"},
+	{"tele_10112_5", 1, "Comfort Telescopic 5 竿", "Comfort Telescopic 5 rod"},
+	{"mono_15212", 1, "Mono Original 11.5LB 鱼线", "Mono Original 11.5LB line"},
+	{"bob_25164", 1, "Bob Original 4G YR 浮漂", "Bob Original 4G YR float"},
+	{"clas_20090", 1, "鱼钩 CHK401 S14", "Hook CHK401 S14"},
 }
 
 // levelGiftSpinSet11 11 级路亚（纺车）套：Arrow S60L + Hydra Smart 2 25S。
 var levelGiftSpinSet11 = []levelGift{
-	{"spin_10003_S60L", 1, "Arrow S60L 路亚竿"},
-	{"spin_5826", 1, "Hydra Smart 2 25S 渔轮"},
+	{"spin_10003_S60L", 1, "Arrow S60L 路亚竿", "Arrow S60L spinning rod"},
+	{"spin_5826", 1, "Hydra Smart 2 25S 渔轮", "Hydra Smart 2 25S reel"},
 }
 
 // levelGiftFor 取某一级的礼物。11 级按升到该级最后一尾鱼的钓法分套：
@@ -121,9 +122,13 @@ func (s *Server) notifyLevelUpGiftChat(uid, level, skillCat int64) {
 	}
 	parts := make([]string, 0, len(gifts))
 	for _, g := range gifts {
-		parts = append(parts, fmt.Sprintf("%s×%d", g.Name, g.Qty))
+		name := g.Name
+		if s.langEN() && g.NameEn != "" {
+			name = g.NameEn
+		}
+		parts = append(parts, fmt.Sprintf("%s×%d", name, g.Qty))
 	}
-	text := fmt.Sprintf("升级礼物（%d级）：%s", level, strings.Join(parts, "、"))
+	text := fmt.Sprintf(s.tr("升级礼物（%d级）：%s", "Level-up gift (level %d): %s"), level, strings.Join(parts, s.tr("、", ", ")))
 	for _, sess := range s.sessionsForUID(uid) {
 		sess.pushSystemChat(text)
 	}

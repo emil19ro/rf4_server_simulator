@@ -634,6 +634,15 @@ func baitExtraDetail(ctx context.Context, s *Server, rod string, comps map[int64
 // 还上了鱼"这件事玩家在界面上完全看不到。这里只报条数与合计重量，不给逐钩
 // 明细——玩家要看的是"这杆一共几尾、多重"。
 func multiHookKeepChat(kept []*store.KeepnetEntry) string {
+	return fmt.Sprintf("多钩：另入护 %d 尾，合计 %.2f kg", len(kept), multiHookKeptKg(kept))
+}
+
+// multiHookKeepChatEN 英文服的多钩入护汇总播报。
+func multiHookKeepChatEN(kept []*store.KeepnetEntry) string {
+	return fmt.Sprintf("Multi-hook: %d more fish kept, %.2f kg total", len(kept), multiHookKeptKg(kept))
+}
+
+func multiHookKeptKg(kept []*store.KeepnetEntry) float64 {
 	var totalG int64
 	for _, e := range kept {
 		if e == nil {
@@ -641,7 +650,7 @@ func multiHookKeepChat(kept []*store.KeepnetEntry) string {
 		}
 		totalG += e.WeightG
 	}
-	return fmt.Sprintf("多钩：另入护 %d 尾，合计 %.2f kg", len(kept), float64(totalG)/1000)
+	return float64(totalG) / 1000
 }
 
 // extraSettleGifts 汇总额外鱼结算里新发的全部礼物（升级礼物 / 两族奖座 / 水域奖杯），

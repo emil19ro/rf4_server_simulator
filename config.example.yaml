@@ -50,6 +50,7 @@ game:
   obs_addr: ":9502"                   # 健康检查、指标和性能分析监听地址。
   default_userid: 1000001             # seed 创建的玩家档案 user ID。
   keepalive_interval_sec: 5.0         # 世界时钟推送间隔（秒）。
+  language: ""                        # 服务端聊天播报与鱼名语言：zh | en；留空按 gateway.region 推断（CN→zh，其他→en）。
 
 admin:
   http_addr: ":8080"                          # 仅 cmd/admin 独立调试使用；launcher 不监听此端口。
@@ -63,6 +64,6 @@ admin:
 # RF4_GATEWAY_LOGIN_ADDR、RF4_GATEWAY_LOGIN_COMPAT_ADDR、RF4_GATEWAY_REALTIME_ADDR、RF4_GATEWAY_ADVERTISE_HOST、
 # RF4_GATEWAY_CERT、RF4_GATEWAY_KEY、RF4_TUNNEL_ADDR、RF4_TUNNEL_PSK、
 # RF4_GAME_TUNNEL_PSK、RF4_ADMIN_HTTP_ADDR、RF4_ADMIN_JWT_SECRET、RF4_ADMIN_PASSWORD、
-# RF4_GAME_CLIENT_PATH、RF4_GAME_CLIENT_REGION、
+# RF4_GAME_CLIENT_PATH、RF4_GAME_CLIENT_REGION、RF4_GAME_LANGUAGE、
 # RF4_GATEWAY_KEEPALIVE_SEC、RF4_KEEPALIVE_INTERVAL_SEC、
 # RF4_BITE_PROBABILITY、RF4_GATEWAY_MAX_CONNS。

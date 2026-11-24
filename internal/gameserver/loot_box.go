@@ -206,11 +206,15 @@ func (s *Server) grantLootBox(ctx context.Context, sess *Session, def lootBoxDef
 	if display == "" {
 		display = itemID
 	}
-	prefix := "钓到了" + def.Name
-	if reason == "保底" {
-		prefix = "上星保底：" + def.Name
+	boxName := def.Name
+	if s.langEN() && def.ID == "event_box" && def.Name == "福袋" {
+		boxName = "Lucky Bag" // 内置兜底礼包；管理员自定义的名称原样显示
 	}
-	sess.pushSystemChat(fmt.Sprintf("%s，开出：%s ×%d", prefix, display, qty))
+	prefix := s.tr("钓到了", "Fished up a ") + boxName
+	if reason == "保底" {
+		prefix = s.tr("上星保底：", "Guaranteed drop: ") + boxName
+	}
+	sess.pushSystemChat(fmt.Sprintf(s.tr("%s，开出：%s ×%d", "%s, it contained: %s ×%d"), prefix, display, qty))
 	s.log.Info("礼包开出", "uid", sess.Userid, "box", def.ID, "item", itemID, "qty", qty,
 		"reason", reason, "fish", catchSpecies(catch), "grade", catchGrade(catch))
 	return itemID

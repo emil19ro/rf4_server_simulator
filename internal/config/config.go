@@ -75,7 +75,16 @@ type Game struct {
 	DefaultUserid int64  `yaml:"default_userid"` // 单账号模式下使用的固定 userid
 
 	KeepaliveIntervalSec float64 `yaml:"keepalive_interval_sec"` // 2/2 世界时钟推送间隔（秒）
+
+	// Language 服务端拼装的聊天播报与鱼名语言：zh | en；留空按 gateway.region 推断。
+	Language string `yaml:"language"`
 }
+
+// 服务端文案语言取值。
+const (
+	LanguageZH = "zh"
+	LanguageEN = "en"
+)
 
 // KeepaliveInterval 2/2 保活间隔；必须小于客户端断开阈值（~10s）。
 func (g *Game) KeepaliveInterval() time.Duration {
@@ -113,6 +122,7 @@ func Load(path string) (*Config, error) {
 		}
 	}
 	cfg.applyEnvOverrides()
+	cfg.resolveLanguage()
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
@@ -206,15 +216,34 @@ func (c *Config) applyEnvOverrides() {
 	envStr("RF4_ADMIN_PASSWORD", &c.Admin.Password)
 	envStr("RF4_GAME_CLIENT_PATH", &c.Launcher.GamePath)
 	envStr("RF4_GAME_CLIENT_REGION", &c.Launcher.GameRegion)
+	envStr("RF4_GAME_LANGUAGE", &c.Game.Language)
 	envFloat("RF4_GATEWAY_KEEPALIVE_SEC", &c.Gateway.TransportKeepaliveSec)
 	envFloat("RF4_KEEPALIVE_INTERVAL_SEC", &c.Gateway.KeepaliveInterval)
 	envFloat("RF4_BITE_PROBABILITY", &c.Gateway.BiteProbability)
 	envInt("RF4_GATEWAY_MAX_CONNS", &c.Gateway.MaxConns)
 }
 
+// resolveLanguage 规范化 game.language；留空时按 gateway.region 推断：
+// CN 或未配置 → zh（保持旧行为），其他区域 → en。
+func (c *Config) resolveLanguage() {
+	lang := strings.ToLower(strings.TrimSpace(c.Game.Language))
+	if lang == "" {
+		region := strings.ToUpper(strings.TrimSpace(c.Gateway.Region))
+		if region == "" || region == "CN" {
+			lang = LanguageZH
+		} else {
+			lang = LanguageEN
+		}
+	}
+	c.Game.Language = lang
+}
+
 func (c *Config) validate() error {
 	if c.SQLite.Path == "" {
 		return fmt.Errorf("sqlite.path 未配置")
+	}
+	if c.Game.Language != LanguageZH && c.Game.Language != LanguageEN {
+		return fmt.Errorf("game.language 只能是 zh 或 en，当前为 %q", c.Game.Language)
 	}
 	if c.Gateway.AdvertisePort == 0 {
 		return fmt.Errorf("gateway.advertise_port 未配置")

@@ -25,32 +25,41 @@ import (
 type qualificationCup struct {
 	ItemID string
 	NameZh string
+	NameEn string // 英文服播报名
 }
 
 var qualificationCupByBranch = map[int64]qualificationCup{
-	1:  {"qual_spin_cup", "纺车竿高手"},
-	2:  {"qual_jig_cup", "汲钩钓(jigging)高手"},
-	3:  {"qual_l_ul_cup", "轻渔具高手"},
-	4:  {"qual_tele_cup", "手竿高手"},
-	5:  {"qual_bolo_match_cup", "博洛尼亚和赛竿高手"},
-	6:  {"qual_feeder_cup", "飞德竿高手"},
-	7:  {"qual_carp_cup", "鲤鱼高手"},
-	8:  {"qual_mlo_cup", "海洋钓鱼高手"},
-	9:  {"ny_2024_cup", "新年奖品 MMXXIV"},
-	10: {"ny_2024_extra_cup", "新年奖品 MMXXIV EXTRA"},
-	11: {"reward_bday24", "RF4-七周年纪念"},
-	12: {"reward_bday24_prem", "RF4-七周年纪念-特别版"},
-	13: {"ny_2025_cup", "新年大奖 2025"},
-	14: {"ny_2025_extra_cup", "新年大奖 2025 特别版"},
-	15: {"reward_bday25", "俄钓8周年纪念"},
-	16: {"reward_bday25_prem", "俄钓8周年纪念-特别版"},
-	17: {"ny_2026_cup", "新年奖品 2026"},
-	18: {"ny_2026_extra_cup", "新年奖品 2026 特别奖"},
-	19: {"reward_bday26", "俄钓4-九周年纪念"},
-	20: {"reward_bday26_prem", "俄钓4-九周年特别纪念"},
+	1:  {"qual_spin_cup", "纺车竿高手", "Spinning Master"},
+	2:  {"qual_jig_cup", "汲钩钓(jigging)高手", "Jigging Master"},
+	3:  {"qual_l_ul_cup", "轻渔具高手", "Light Tackle Master"},
+	4:  {"qual_tele_cup", "手竿高手", "Telescopic Rod Master"},
+	5:  {"qual_bolo_match_cup", "博洛尼亚和赛竿高手", "Bolognese and Match Master"},
+	6:  {"qual_feeder_cup", "飞德竿高手", "Feeder Master"},
+	7:  {"qual_carp_cup", "鲤鱼高手", "Carp Master"},
+	8:  {"qual_mlo_cup", "海洋钓鱼高手", "Sea Fishing Master"},
+	9:  {"ny_2024_cup", "新年奖品 MMXXIV", "New Year Prize MMXXIV"},
+	10: {"ny_2024_extra_cup", "新年奖品 MMXXIV EXTRA", "New Year Prize MMXXIV EXTRA"},
+	11: {"reward_bday24", "RF4-七周年纪念", "RF4 7th Anniversary"},
+	12: {"reward_bday24_prem", "RF4-七周年纪念-特别版", "RF4 7th Anniversary Special"},
+	13: {"ny_2025_cup", "新年大奖 2025", "New Year Grand Prize 2025"},
+	14: {"ny_2025_extra_cup", "新年大奖 2025 特别版", "New Year Grand Prize 2025 Special"},
+	15: {"reward_bday25", "俄钓8周年纪念", "RF4 8th Anniversary"},
+	16: {"reward_bday25_prem", "俄钓8周年纪念-特别版", "RF4 8th Anniversary Special"},
+	17: {"ny_2026_cup", "新年奖品 2026", "New Year Prize 2026"},
+	18: {"ny_2026_extra_cup", "新年奖品 2026 特别奖", "New Year Prize 2026 Special"},
+	19: {"reward_bday26", "俄钓4-九周年纪念", "RF4 9th Anniversary"},
+	20: {"reward_bday26_prem", "俄钓4-九周年特别纪念", "RF4 9th Anniversary Special"},
 }
 
-var qualificationTotalCup = qualificationCup{"qual_total_cup", "超级高手"}
+var qualificationTotalCup = qualificationCup{"qual_total_cup", "超级高手", "Grand Master"}
+
+// chatName 播报用奖杯名。
+func (c qualificationCup) chatName(en bool) string {
+	if en && c.NameEn != "" {
+		return c.NameEn
+	}
+	return c.NameZh
+}
 
 // qualificationCupKey 幂等键；branch=0 表示全 8 分支的总杯。
 func qualificationCupKey(uid, branch int64) string {
@@ -105,13 +114,13 @@ func (s *Server) ensureQualificationCups(ctx context.Context, uid int64) []*stor
 		}
 		if it := s.grantQualificationCup(ctx, uid, branch, cup); it != nil {
 			granted = append(granted, it)
-			names = append(names, cup.NameZh)
+			names = append(names, cup.chatName(s.langEN()))
 		}
 	}
 	if permanentDone == qualificationBranches {
 		if it := s.grantQualificationCup(ctx, uid, 0, qualificationTotalCup); it != nil {
 			granted = append(granted, it)
-			names = append(names, qualificationTotalCup.NameZh)
+			names = append(names, qualificationTotalCup.chatName(s.langEN()))
 		}
 	}
 	if len(names) > 0 {
@@ -124,6 +133,9 @@ func (s *Server) ensureQualificationCups(ctx context.Context, uid int64) []*stor
 // 老档首次登录（28/2 兜底）可能一次补发多枚，逐条播报会刷屏，故合并。
 func (s *Server) broadcastQualificationCups(uid int64, names []string) {
 	text := qualificationCupsBroadcastText(names)
+	if s.langEN() {
+		text = qualificationCupsBroadcastTextEN(names)
+	}
 	if text == "" {
 		return
 	}
@@ -145,6 +157,18 @@ func qualificationCupsBroadcastText(names []string) string {
 		b.WriteString("」")
 	}
 	return b.String()
+}
+
+// qualificationCupsBroadcastTextEN 英文服播报："Rewards received: "A", "B""。
+func qualificationCupsBroadcastTextEN(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	quoted := make([]string, len(names))
+	for i, n := range names {
+		quoted[i] = `"` + n + `"`
+	}
+	return "Rewards received: " + strings.Join(quoted, ", ")
 }
 
 // grantQualificationCup 单杯发放：幂等键与物品同事务提交，先到先得；

@@ -400,13 +400,16 @@ func hDynamicRodBreak(ctx *Ctx) ([]byte, bool) {
 				switch {
 				case keepFight:
 					// 官服断轮：鱼还咬着钩，只是收不动线。
-					ctx.Sess.pushSystemChat("渔线轮已损坏，无法收线；鱼仍在钩上，可剪线或等线被拉断")
+					ctx.Sess.pushSystemChat(ctx.Sess.Srv.tr("渔线轮已损坏，无法收线；鱼仍在钩上，可剪线或等线被拉断",
+					"Reel is broken and cannot retrieve; the fish is still hooked - cut the line or wait for it to snap"))
 				case reelBroken:
 					// 轮子本体耐久归零，整体损坏。
-					ctx.Sess.pushSystemChat("渔线轮已损坏，请到工坊修理后再使用")
+					ctx.Sess.pushSystemChat(ctx.Sess.Srv.tr("渔线轮已损坏，请到工坊修理后再使用",
+					"Reel is broken - repair it in the workshop before use"))
 				case frictionWorn:
 					// 摩擦片磨穿、泄力失效，本体没坏，换摩擦片即可。
-					ctx.Sess.pushSystemChat("摩擦片磨穿、泄力失效，请到工坊更换摩擦片")
+					ctx.Sess.pushSystemChat(ctx.Sess.Srv.tr("摩擦片磨穿、泄力失效，请到工坊更换摩擦片",
+					"Drag washers are worn out and the drag no longer slips - replace them in the workshop"))
 				}
 			})
 			if keepFight {

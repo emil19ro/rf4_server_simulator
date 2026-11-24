@@ -177,12 +177,12 @@ func (s *Server) maybeReportStamina(ctx *Ctx, st *FishState, now time.Time) {
 	if !allowed {
 		return
 	}
-	text := fmt.Sprintf("[耐力] %.1f%%", value*100)
+	text := fmt.Sprintf(s.tr("[耐力] %.1f%%", "[Stamina] %.1f%%"), value*100)
 	// 超载依赖两件事：帧内上报的钓组最弱环，以及该鱼种的标定拉力。任一缺失
 	// （坏帧、未知鱼种）就只报耐力，不猜。
 	if limit, ok := fishRigLimitFromLoad(ctx.Body); ok {
 		if pct, ok := fishOverloadPct(limit, pull, value); ok {
-			text += fmt.Sprintf(" · [超载] %.0f%%", pct)
+			text += fmt.Sprintf(s.tr(" · [超载] %.0f%%", " · [Overload] %.0f%%"), pct)
 		}
 	}
 	ctx.Sess.Push(24, 27, buildChatEchoPush("", text, uint64(uid), 1))

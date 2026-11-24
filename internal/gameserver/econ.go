@@ -337,7 +337,11 @@ func (s *Server) fishingKeep(ctx *Ctx) ([]byte, bool) {
 				"条数", len(extraKept), "明细", keepnetEntryDetail(extraKept))
 			// 结算卡（801）只画得下一尾，杆上又只有一个鱼模型，另几尾进护这件事
 			// 玩家在其他地方看不到，这里用一行汇总播报交代清楚：几尾、合计多重。
-			ctx.Sess.pushSystemChat(multiHookKeepChat(extraKept))
+			if s.langEN() {
+				ctx.Sess.pushSystemChat(multiHookKeepChatEN(extraKept))
+			} else {
+				ctx.Sess.pushSystemChat(multiHookKeepChat(extraKept))
+			}
 		}
 		s.notifyFishKept(ctx.Sess, &kept)
 		// 稀有鱼 / 超级稀有鱼鱼种数奖座**不在这里判定**：官方结算界面（801）在
@@ -367,7 +371,7 @@ func (s *Server) fishingKeep(ctx *Ctx) ([]byte, bool) {
 				if name == "" {
 					name = trophy.ItemID
 				}
-				ctx.Sess.pushSystemChat(fmt.Sprintf("集齐该水域全部稀有鱼：%s", name))
+				ctx.Sess.pushSystemChat(fmt.Sprintf(s.tr("集齐该水域全部稀有鱼：%s", "All rare fish of this water collected: %s"), name))
 			}
 		}
 		out := proto.Args(proto.S("61"))
