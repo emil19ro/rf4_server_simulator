@@ -134,7 +134,7 @@ func main() {
 	mux.HandleFunc("/api/admin/retry", app.handleAdminRetry)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write(panelHTML)
+		_, _ = w.Write(panelPage(panelHTML, app.cfg.Game.Language))
 	})
 	mux.HandleFunc("/api/status", app.handleStatus)
 	mux.HandleFunc("/api/overview", app.handleOverview)
