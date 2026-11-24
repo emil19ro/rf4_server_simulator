@@ -7,9 +7,9 @@
 只想本地游玩时，无需安装 Go 或自行编译：
 
 1. 下载[正式版](https://github.com/OpenFisherCommunity/rf4_server_simulator/releases/latest)中的 Windows x64 ZIP 并完整解压，不要选择 `Source code`。若需体验最新合入的功能，可在[全部发布](https://github.com/OpenFisherCommunity/rf4_server_simulator/releases)中选择 Preview；预览版的功能和风险以该版发布说明为准。
-2. 阅读包内 `快速开始.txt`。发布包提供本地开发证书 `certs/server.crt`，将公钥证书安装到本机「受信任的根证书颁发机构」。它只用于本地测试，不要分享私钥。
+2. 阅读包内 `QuickStart.txt`。发布包提供本地开发证书 `certs/server.crt`，将公钥证书安装到本机「受信任的根证书颁发机构」。它只用于本地测试，不要分享私钥。
 3. 以管理员权限编辑 Windows 的 `%SystemRoot%\System32\drivers\etc\hosts`，将 `api.rf4game.ru` 和 `api.rf4game.com` 指向 `127.0.0.1`；也可在 launcher 控制中心切换 hosts 指向，写入时同样需要管理员权限。客户端在其他电脑运行时，应改为网关的可信局域网地址，详见[客户端接入](#客户端接入)。
-4. 双击 `启动服务器.cmd` 或运行 `bin\launcher.exe`，等待自动初始化与健康检查完成。打开 `http://127.0.0.1:9500/`，在「运行控制」中保存 `rf4_x64.exe` 的绝对路径，再点击「启动游戏」。
+4. 双击 `Start-Server.cmd` 或运行 `bin\launcher.exe`，等待自动初始化与健康检查完成。打开 `http://127.0.0.1:9500/`，在「运行控制」中保存 `rf4_x64.exe` 的绝对路径，再点击「启动游戏」。
 5. 在同一控制中心进入管理后台。Windows 发布包默认管理员为 `admin` / `admin123`，应在配置中修改；自行从模板部署时以 `admin.username` 和 `admin.password` 为准。
 
 结束本地游玩、需要返回官方服务器时，将 hosts 中上述域名恢复为原先解析。launcher 面板支持切换回官方指向；使用自动切换时，需设置 `launcher.hosts_switch: true` 并以管理员权限启动，launcher 退出会还原它管理的 hosts 条目。手动添加的条目需手动恢复，不要删除其他程序维护的条目。

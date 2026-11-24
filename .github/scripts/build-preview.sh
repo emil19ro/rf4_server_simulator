@@ -109,67 +109,66 @@ with open(dst, "w", encoding="utf-8") as f:
     f.write("\n")
 PY
 
-cat > "${STAGE}/快速开始.txt" <<EOF
-rf4_server_simulator ${VERSION} 快速开始
+cat > "${STAGE}/QuickStart.txt" <<EOF
+rf4_server_simulator ${VERSION} - Quick start
 
 Commit: ${COMMIT_SHA}
-支持客户端版本：4.0.25034
+Supported client version: 4.0.25034
 
-1. 安装证书
-   双击 certs\server.crt，选择“安装证书”。
-   证书存储位置选择“当前用户”或“本地计算机”。
-   将证书放入“受信任的根证书颁发机构”。
-   本证书仅用于本机测试，请勿用于公网服务。
+1. Install the certificate
+   Double-click certs\server.crt and choose "Install Certificate".
+   Store location: "Current User" or "Local Machine".
+   Place it in "Trusted Root Certification Authorities".
+   This certificate is for local testing only - never use it for a public server.
 
-2. 修改 hosts
-   以管理员权限编辑：
+2. Edit hosts
+   Edit as administrator:
    C:\Windows\System32\drivers\etc\hosts
-   添加：
+   Add:
    127.0.0.1 api.rf4game.ru
    127.0.0.1 api.rf4game.com
 
-3. 启动
-   双击“启动服务器.cmd”，或运行 bin\launcher.exe。
-   统一控制中心：http://127.0.0.1:9500（运行控制 + 管理后台）
-   初始管理员：admin / admin123
+3. Start
+   Double-click "Start-Server.cmd", or run bin\launcher.exe.
+   Control center: http://127.0.0.1:9500 (run control + admin console)
+   Default admin: admin / admin123
 
-4. 注意
-   - 首次启动会自动创建 data 目录并导入静态数据。
-   - 不要上传或分享 config.yaml、certs、data。
-   - Preview 版本基于 main 分支当前提交构建，仅供测试。
+4. Notes
+   - The first start creates the data folder and imports the static data.
+   - Do not upload or share config.yaml, certs or data.
+   - Preview builds are made from the current main commit and are for testing only.
 EOF
 
-printf '@echo off\r\ncd /d "%%~dp0"\r\nstart "" "bin\\launcher.exe"\r\n' > "${STAGE}/启动服务器.cmd"
+printf '@echo off\r\ncd /d "%%~dp0"\r\nstart "" "bin\\launcher.exe"\r\n' > "${STAGE}/Start-Server.cmd"
 
 cat > "${RELEASE_NOTES}" <<EOF
 # rf4_server_simulator ${VERSION}
 
-- 分支：main
-- Commit：${COMMIT_SHA}
-- 短 Commit ID：${SHORT_SHA}
-- 构建时间（UTC）：${BUILD_TS}
-- 构建方式：GitHub Actions
+- Branch: main
+- Commit: ${COMMIT_SHA}
+- Short commit ID: ${SHORT_SHA}
+- Build time (UTC): ${BUILD_TS}
+- Built by: GitHub Actions
 
-## 包内内容
+## Package contents
 
-- Windows x64 可执行程序与 launcher
-- config.yaml 和 config.example.yaml
-- server_data 静态资产
-- certs 本地开发证书
-- README、LICENSE、docs
-- 快速开始.txt、启动服务器.cmd
-- version.json（结构同仓库根：本次构建写进 preview 通道）
+- Windows x64 executables and launcher
+- config.yaml and config.example.yaml
+- server_data static assets
+- certs local development certificate
+- README, LICENSE, docs
+- QuickStart.txt, Start-Server.cmd
+- version.json (same structure as the repository root; this build writes the preview channel)
 
-## 问题反馈
+## Feedback
 
-- 交流群：1134665746
-- GitHub Issues：https://github.com/${GITHUB_REPOSITORY:-OpenFisherCommunity/rf4_server_simulator}/issues
+- GitHub Issues: https://github.com/${GITHUB_REPOSITORY:-OpenFisherCommunity/rf4_server_simulator}/issues
 
-## 最近提交
+## Recent commits
 
 $(git log --invert-grep --grep='^chore(release):' -20 --format='- @%h %s')
 EOF
-cp "${RELEASE_NOTES}" "${STAGE}/发布说明.md"
+cp "${RELEASE_NOTES}" "${STAGE}/Release-Notes.md"
 
 if [[ -e "${STAGE}/bin/admin.exe" ]]; then
   echo "refusing to package standalone admin.exe; admin is embedded in launcher" >&2

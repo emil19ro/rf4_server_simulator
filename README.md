@@ -36,8 +36,8 @@
 **不需要安装 Go，也不需要自行编译。**
 
 1. 前往 [Releases](https://github.com/OpenFisherCommunity/rf4_server_simulator/releases/latest)，下载名称以 `windows-amd64.zip` 结尾的发布包，完整解压；不要选择 `Source code`。
-2. 准备 **4.0.25034** 客户端，按照包内的 `快速开始.txt` 完成本机证书信任与 hosts 设置。详细步骤见[发布包与客户端接入指南](docs/deploy.md#使用-windows-发布包)。
-3. 双击 `启动服务器.cmd`，或运行 `bin\launcher.exe`。打开[本地控制中心](http://127.0.0.1:9500/)，等待游戏服务就绪；首次运行会自动初始化本地数据。
+2. 准备 **4.0.25034** 客户端，按照包内的 `QuickStart.txt` 完成本机证书信任与 hosts 设置。详细步骤见[发布包与客户端接入指南](docs/deploy.md#使用-windows-发布包)。
+3. 双击 `Start-Server.cmd`，或运行 `bin\launcher.exe`。打开[本地控制中心](http://127.0.0.1:9500/)，等待游戏服务就绪；首次运行会自动初始化本地数据。
 4. 在控制中心保存 `rf4_x64.exe` 的路径，然后点击「启动游戏」。角色和玩法参数可在同一控制中心的管理后台中调整。
 
 想体验最近合入的功能，可在[全部发布](https://github.com/OpenFisherCommunity/rf4_server_simulator/releases)中选择标记为 **Pre-release** 的 Preview。预览版更新更快，也可能包含尚待充分验证的改动。更新前请备份存档和配置，详见[数据与备份](docs/deploy.md#数据)。

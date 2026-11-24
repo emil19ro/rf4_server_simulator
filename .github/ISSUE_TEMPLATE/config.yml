@@ -2,7 +2,7 @@ blank_issues_enabled: true
 contact_links:
   - name: 新手教程
     url: https://docs.qq.com/aio/DVmVyc0p0SEZUU3Bw
-    about: 查看安装、启动和登录说明；版本差异以发布包内的“快速开始.txt”为准。
+    about: 查看安装、启动和登录说明；版本差异以发布包内的“QuickStart.txt”为准。
   - name: 社区 BUG 反馈表
     url: https://docs.qq.com/sheet/DVnpaU0JoUmxnWk1N?tab=6cahat
     about: 查看社区已反馈的问题及处理状态，避免跨渠道重复提交。

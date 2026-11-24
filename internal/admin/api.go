@@ -60,7 +60,11 @@ type logger interface {
 	Error(string, ...any)
 }
 
-const releaseNotesFilename = "发布说明.md"
+// releaseNotesFilename 发布包根目录的发布说明文件名；旧包使用中文文件名，查找时兼容。
+const (
+	releaseNotesFilename       = "Release-Notes.md"
+	legacyReleaseNotesFilename = "发布说明.md"
+)
 
 // NewServer 构建管理后台（webFS 为内嵌前端，nil 时只有 API）。
 // 运行时指令写入共享 SQLite 队列，由 gameserver 轮询消费。
@@ -941,7 +945,7 @@ func (s *Server) handleReleaseNotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{
-		"filename": releaseNotesFilename,
+		"filename": filepath.Base(path),
 		"content":  content,
 	})
 }
@@ -954,11 +958,12 @@ func (s *Server) findReleaseNotes() (string, error) {
 		}
 		return s.releaseNotesPath, nil
 	}
-	path, err := findLocalFile(releaseNotesFilename)
-	if err != nil {
-		return "", fmt.Errorf("未找到 %s；请从完整发布包启动，或先执行打包流程", releaseNotesFilename)
+	for _, name := range []string{releaseNotesFilename, legacyReleaseNotesFilename} {
+		if path, err := findLocalFile(name); err == nil {
+			return path, nil
+		}
 	}
-	return path, nil
+	return "", fmt.Errorf("未找到 %s；请从完整发布包启动，或先执行打包流程", releaseNotesFilename)
 }
 
 func findLocalFile(name string) (string, error) {

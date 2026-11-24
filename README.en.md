@@ -36,8 +36,8 @@ For detailed mechanics, switches, and supported scope, see [Fishing mechanics](d
 **You do not need to install Go or build the project yourself.**
 
 1. Open [Releases](https://github.com/OpenFisherCommunity/rf4_server_simulator/releases/latest) and download the Windows x64 ZIP ending in `windows-amd64.zip`. Extract it completely; do not choose `Source code`.
-2. Prepare the **4.0.25034** client and follow the package's `快速开始.txt` for local certificate trust and hosts setup. See the [Windows release package guide](docs/deploy.md#使用-windows-发布包) for details.
-3. Double-click `启动服务器.cmd`, or run `bin\launcher.exe`. Open the [local control center](http://127.0.0.1:9500/) and wait for the game services to become ready. Local data is initialized on the first run.
+2. Prepare the **4.0.25034** client and follow the package's `QuickStart.txt` for local certificate trust and hosts setup. See the [Windows release package guide](docs/deploy.md#使用-windows-发布包) for details.
+3. Double-click `Start-Server.cmd`, or run `bin\launcher.exe`. Open the [local control center](http://127.0.0.1:9500/) and wait for the game services to become ready. Local data is initialized on the first run.
 4. Save the path to `rf4_x64.exe` in the control center, then click **Start game**. The same control center provides access to the admin panel for characters and gameplay settings.
 
 To try recently merged features, choose a release marked **Pre-release** on the [all releases](https://github.com/OpenFisherCommunity/rf4_server_simulator/releases) page. Preview releases update faster and may include changes that have not received as much validation. Back up your save data and configuration before updating; see [Data and backups](docs/deploy.md#数据).
