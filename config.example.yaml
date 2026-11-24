@@ -51,6 +51,10 @@ game:
   default_userid: 1000001             # seed 创建的玩家档案 user ID。
   keepalive_interval_sec: 5.0         # 世界时钟推送间隔（秒）。
   language: ""                        # 服务端聊天播报与鱼名语言：zh | en；留空按 gateway.region 推断（CN→zh，其他→en）。
+  # 天气序列：启动时按每张图加权生成晴/少云/多云/雨/暴雨/雷暴。
+  weather:
+    randomize: true                   # false=沿用地图模板的固定 kind 顺序。
+    cycle_days: 64                    # 每图序列天数，最小 8。
 
 admin:
   http_addr: ":8080"                          # 仅 cmd/admin 独立调试使用；launcher 不监听此端口。
