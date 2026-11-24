@@ -3,7 +3,7 @@
 > 状态：**方案定稿，已实施**——代码与 spec 见 `specs/changes/fight-statics-official-tables/`（本 PR）；
 > 实机回归判据见 §五 D.5，合并后补验证。
 > 证据链：2026-11-13 半小时实机日志（两局会话）+ 19 条官方 14/14 实测包 + 客户端反编译源码。
-> 与既有方案的关系：**并入并具体化 `docs/鱼拉力P3方案-未测种覆盖与模型精化.md`** 的静态参数部分
+> 与既有方案的关系：**并入并具体化 `docs/fish-pull-p3-untested-species-and-model.md`** 的静态参数部分
 > （P1=f8 K 表、P2=官方池直配+f5/f6 表 已进 main；本方案补上 P1/P2 未覆盖的 f9~f20 静态块）。
 
 ---
@@ -170,7 +170,7 @@ logs/captures/{diaodiao2,official_trace}/）：
 | f6 逐鱼随机带 | P3 §三.2：同种同体重档 ×5 尾测官方随机带 |
 | amp 列独立缩放 | P3 §三.4（crucian ×1.2967/×1.3190 现象） |
 | 补抓锚点 | P3 §四清单，海鱼优先：绿青鳕/单鳍鳕 ×1（鳕科 M1 第三锚点，覆盖 coalfish/menek） |
-| 磨损线 | `docs/实测博鱼过程对装备磨损的影响分析.md` 独立推进 |
+| 磨损线 | `docs/fight-gear-wear-measured-analysis.md` 独立推进 |
 
 ## 八、完成判据（对照 CLAUDE.md 五问）
 

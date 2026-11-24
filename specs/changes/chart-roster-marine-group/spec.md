@@ -99,7 +99,7 @@ Status: in-progress
 - `[事实]` 当晚脱钩鱼种归组：m_zubatka→small、meagre/x_gladius→default，
   均不在 marine 词表（fish_fight_profile.go 关键词表实查 + 影响面脚本）。
 - `[事实]` 27 静态参数差异由客户端本地判定消费（f0=2 钩保持归零），见
-  `docs/搏鱼脱钩根因与修复整体方案-2026-11-13.md` §三/§四。
+  `docs/fight-unhook-root-cause-and-fix-plan-2026-11-13.md` §三/§四。
 - `[事实]` 词表 marine 27 种中仅 21 种位于挪威海 loc_fish；其余 6 种
   `agar`/`warm`/`b_herring`/`c_herring`/`cha_herring`/`k_herring`
   只出现在淡水图（2026-11-15 实查 `server_data/static.sqlite3`）。因此

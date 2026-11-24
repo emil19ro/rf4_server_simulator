@@ -13,7 +13,7 @@ import (
 )
 
 // TestReelPartWearMatchesOfficialRates 用官服实测字面量钉住速率：lure2 n.pike
-// 搏鱼窗口 17s 各件 Δ%（docs/实测博鱼过程对装备磨损的影响分析.md §3）。期望值
+// 搏鱼窗口 17s 各件 Δ%（docs/fight-gear-wear-measured-analysis.md §3）。期望值
 // 一律取抓包实测速率，不允许用实现代码复算；矩阵缺省档位取存档方案档位，
 // 与官服字面量的偏差在 ±20% 内。
 func TestReelPartWearMatchesOfficialRates(t *testing.T) {

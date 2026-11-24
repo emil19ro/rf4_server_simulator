@@ -2,7 +2,7 @@
 
 Status: done
 
-日期：2026-11-16 ｜ 分析：`docs/路亚脱钩率分析-2026-11-16.md`
+日期：2026-11-16 ｜ 分析：`docs/lure-unhook-rate-analysis-2026-11-16.md`
 
 ## 背景与证据
 

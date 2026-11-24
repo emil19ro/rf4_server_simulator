@@ -4,8 +4,8 @@
 > 前置：P1（PR #410，f8 逐鱼种 K 表 + 曲线纯 uniform）与 P2（PR #411，9 官方池直配 +
 > f5 每克均值表 + f6 量化表）**已实现并进 main**（原分支 fix/fish-pull-k-table-wt /
 > fix/fish-official-data-tables）。
-> 证据链见 `docs/根据实测包的鱼拉力修改后续建议.md` 与
-> `docs/实测博鱼过程对装备磨损的影响分析.md`（磨损线，另行推进）。
+> 证据链见 `docs/fish-pull-followup-from-captures.md` 与
+> `docs/fight-gear-wear-measured-analysis.md`（磨损线，另行推进）。
 
 ## 一、P1/P2 合入后还剩什么（本方案范围）
 

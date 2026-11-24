@@ -1664,7 +1664,7 @@ func hFishingLeft(ctx *Ctx) ([]byte, bool) {
 		// 路亚脱钩同样重新排鱼，收线途中仍可能再次咬钩。
 		//
 		// 官方语义（客户端两阶段模型，2026-11-16 逆向收敛，
-		// docs/路亚脱钩率分析-2026-11-16.md）：阶段一 kldglnchdec
+		// docs/lure-unhook-rate-analysis-2026-11-16.md）：阶段一 kldglnchdec
 		// 进场保持掷骰失败 → 鱼叼住拟饵 0.5~2.0s 后吐出 = f0=1
 		// （咬饵未咬钩：客户端连「上鱼」通知都不出，本地化模板表
 		// 也无此类播报载体 → 官方静默）；阶段二 kejihbadeej 搏鱼

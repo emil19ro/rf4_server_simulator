@@ -188,7 +188,7 @@ crucian 293g 逐阶段 sim/off 比（uniform 应为 1.0）：
 未覆盖鱼种的 14/14。状态更新（2026-11-11 晚）：**P1 已实现并提 PR #410、
 P2 已实现并提 PR #411（以 #410 为基准）**，分支 fix/fish-pull-k-table-wt /
 fix/fish-official-data-tables（基于 upstream/main 241706b）；P3 拆出独立存档
-《鱼拉力P3方案-未测种覆盖与模型精化.md》（同目录）。CI：Build&Vet 绿；Test
+《fish-pull-p3-untested-species-and-model.md》（同目录）。CI：Build&Vet 绿；Test
 步骤仅剩两个既有时间依赖 flaky 测试（TestFishEcologySeeds/
 TestGroundbaitWeather，干净基线同样红、失败数值随时刻漂移，已在两个 PR
 评论留证）。

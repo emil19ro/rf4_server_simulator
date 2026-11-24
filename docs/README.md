@@ -46,11 +46,11 @@
 - [官方协议工作坊](official-protocol-workshop.md)：协议观察、记录和整理资料。
 - [钓鱼全链路分析（2026-11-07）](analysis-fishing-chain-2026-11-07.md)：一次性排查快照，
   含历史事故过程与行号，会过期；结论以代码与能力契约为准。
-- [实测博鱼过程对装备磨损的影响分析（2026-11-11）](实测博鱼过程对装备磨损的影响分析.md)：
+- [实测博鱼过程对装备磨损的影响分析（2026-11-11）](fight-gear-wear-measured-analysis.md)：
   一次性分析快照，官服抓包对拍磨损口径的证据源；结论已正式化为
   specs/changes/wear-fight-time/spec.md。
-- [鱼的作用力对拍：官服抓包 vs 模拟器（2026-11-11）](根据实测包的鱼拉力修改后续建议.md)；
-  后续方案见 [鱼拉力 P3 方案（存档，未开工）](鱼拉力P3方案-未测种覆盖与模型精化.md)。
+- [鱼的作用力对拍：官服抓包 vs 模拟器（2026-11-11）](fish-pull-followup-from-captures.md)；
+  后续方案见 [鱼拉力 P3 方案（存档，未开工）](fish-pull-p3-untested-species-and-model.md)。
 
 ### 搏鱼物理与发鱼分析快照
 
@@ -68,8 +68,8 @@
   钩型确认修复 + 海图声呐狩猎。
 - [rf4almanac 重量数据整理与可用性分析（2026-11-08）](analysis-rf4almanac-weight-2026-11-08.md)；
   抓取与许可声明见该文「抓取与许可声明」一节。
-- [鱼口配置叠加/覆盖关系调查（2026-11-10）](后台配置对发鱼流程影响的调查.md)。
-- [路亚秒脱钩归因分析（2026-11-12）](路亚秒脱钩归因分析-2026-11-12.md)：模拟器脱钩
+- [鱼口配置叠加/覆盖关系调查（2026-11-10）](admin-config-impact-on-fish-spawn.md)。
+- [路亚秒脱钩归因分析（2026-11-12）](lure-instant-unhook-attribution-2026-11-12.md)：模拟器脱钩
   间隔双峰签名 × 官方 lure2 抓包运行位对照的证据源；结论已正式化为
   specs/changes/lure-fight-mount-flags/spec.md。
 - [升级礼物卡片机制（完整还原）](LEVEL_UP_GIFT_CARDS.md)。
@@ -77,14 +77,14 @@
 - [客户端"脱钩/断线"本地判定机制专项调研（2026-11-12）](analysis-client-line-break-detection-2026-11-12.md)。
 - [四类钓法状态门与路亚线杯状态排查（2026-11-12）](analysis-fishing-method-state-gates-2026-11-12.md)。
 - [浮钓顺水漂流不发鱼排查（2026-11-12）](analysis-float-drift-fish-spawn-2026-11-12.md)。
-- [鱼脱钩（跑鱼）客户端/服务端判定机制分析（2026-11-12）](客户端结算脱钩逻辑分析.md)。
+- [鱼脱钩（跑鱼）客户端/服务端判定机制分析（2026-11-12）](client-settlement-unhook-logic.md)。
 - [入水证据官方报文核验与浮钓顺流修复方案（2026-11-13）](analysis-inwater-evidence-packet-verification-2026-11-13.md)：
   六份官方 pcap 全量解码 14/7 f5 位序；浮钓顺流/下沉与 14/3 入水证据修复
   （P1/P2/P3）的依据与方案存档。
-- [搏鱼脱钩根因与修复整体方案（2026-11-13）](搏鱼脱钩根因与修复整体方案-2026-11-13.md)：
+- [搏鱼脱钩根因与修复整体方案（2026-11-13）](fight-unhook-root-cause-and-fix-plan-2026-11-13.md)：
   海鱼静态参数缺口的根因定量与落表方案；结论已正式化为
   specs/changes/fight-statics-official-tables/spec.md。
-- [路亚脱钩率归因收敛：咬饵≠咬钩（2026-11-16）](路亚脱钩率分析-2026-11-16.md)：
+- [路亚脱钩率归因收敛：咬饵≠咬钩（2026-11-16）](lure-unhook-rate-analysis-2026-11-16.md)：
   客户端两阶段模型（f0=1 叼住吐出 / f0=2 真脱钩）；结论已正式化为
   specs/changes/lure-f0-1-silent-spit-out/spec.md。
 

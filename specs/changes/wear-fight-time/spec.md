@@ -11,7 +11,7 @@ Status: in-progress
 ## Problem Statement
 
 抓包对拍（46 帧 + 底钓2 274 帧 4/22 快照，见
-`docs/实测博鱼过程对装备磨损的影响分析.md`）证实官服磨损与我们的模型是两种口径：
+`docs/fight-gear-wear-measured-analysis.md`）证实官服磨损与我们的模型是两种口径：
 
 - **官服只按"受力时间"扣**：17s 搏鱼窗口轮油/主齿轮/导环 ≈0.0004%/s 连续下降；
   脱钩后 92s 空竿收线（74 条 14/7 遥测）全部零件零磨损；结算前后耐久连续无跳变。
@@ -162,7 +162,7 @@ Status: in-progress
   `reel_slip_deadband_ratio`、`wear_leader_per_stress_sec`）缺省值。行为开关一律
   不设：实机若发现下发形状有问题，修代码，不留运行时后门（2026-11-11 用户裁定）。
 - 文档回填：`specs/capabilities/`（结算与装备契约）、`docs/mechanism-map.md`
-  磨损入口、`docs/实测博鱼过程对装备磨损的影响分析.md` §7 状态行。
+  磨损入口、`docs/fight-gear-wear-measured-analysis.md` §7 状态行。
 
 ## Testing Decisions
 
@@ -197,7 +197,7 @@ Status: in-progress
 
 - [事实] 抓包对拍（46 帧 + 底钓2 274 帧）：受力时间口径、空竿零磨损、结算无跳变、
   旋钮/钩不磨损、搏鱼中逐帧 4/22、卸力片 0.00024%/s@112s 重度打滑、1.04× 边界
-  零磨损——`docs/实测博鱼过程对装备磨损的影响分析.md` §1/§3/§5。
+  零磨损——`docs/fight-gear-wear-measured-analysis.md` §1/§3/§5。
 - [事实·单场次] 前导受力磨损 0.000047%/s（底钓2 §5.2，412s/0.019%，W5 峰值 0.00012）；
   仅此一场有前导序列，平坦基线是取值约定。
 - [事实] 现行偏差量级：轮油 ~90×、轴承 ~20×、主齿轮 ~8×、线杯 ~7×、手柄官方为 0
