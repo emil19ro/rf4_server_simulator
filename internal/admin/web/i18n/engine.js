@@ -29,7 +29,8 @@
 
   function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
-  function makeTranslator(dict, patterns) {
+  function makeTranslator(dict, patterns, post) {
+    post = post || [];
     var has = Object.prototype.hasOwnProperty;
     var multi = [], single = [];
     Object.keys(dict).forEach(function (k) {
@@ -56,6 +57,9 @@
       if (singleRe && CJK.test(out)) {
         out = out.replace(singleRe, function (_, pre, ch) { return pre + dict[ch]; });
       }
+      // post: rules for leftovers that only make sense next to already
+      // translated English (e.g. a category suffix glued to an English name).
+      for (var q = 0; q < post.length && CJK.test(out); q++) out = out.replace(post[q][0], post[q][1]);
       return out;
     };
   }
@@ -79,7 +83,7 @@
 
   function start(opts) {
     var lang = currentLang();
-    var tr = makeTranslator(opts.dict || {}, opts.patterns || []);
+    var tr = makeTranslator(opts.dict || {}, opts.patterns || [], opts.post || []);
     var skipSel = "[data-no-i18n]" + (opts.skip ? ", " + opts.skip : "");
     window.RF4I18N.tr = tr;
 

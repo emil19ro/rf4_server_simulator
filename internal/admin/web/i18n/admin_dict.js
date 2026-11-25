@@ -1239,10 +1239,24 @@
   for (var k in NAMES) {
     if (Object.prototype.hasOwnProperty.call(NAMES, k) && !Object.prototype.hasOwnProperty.call(DICT, k)) DICT[k] = NAMES[k];
   }
-  DICT["系列"] = DICT["系列"] || "series";
+  // Pieces that database bait names are built from ("Coconut and cream类",
+  // "Lurker 100 系列", "粪便蚯蚓"): translated after the full names above.
+  var PIECES = {
+    "系列": " series", "类": " (all)", "幼虫": " larva", "昆虫幼虫": "Insect larvae",
+    "粪便": "Dung ", "中性的": "Neutral", "中性": "Neutral", "亮片": "Spoons",
+    "可溶": "soluble", "区域": "zone", "号区": "zone", "使用": "using "
+  };
+  for (var p in PIECES) {
+    if (!Object.prototype.hasOwnProperty.call(DICT, p)) DICT[p] = PIECES[p];
+  }
 
   // The toggle button and native dialogs are handled by the engine.
   // Rendered documents (README, release notes in .md) are shown as-is: the
   // About page serves README.en.md in English instead.
-  window.RF4I18N.start({ dict: DICT, patterns: PATTERNS, skip: ".md" });
+  // Category / bait suffixes glued to an already English name.
+  var POST = [
+    [/([A-Za-z0-9)])类/g, "$1 (all)"],
+    [/([A-Za-z0-9)])饵/g, "$1 bait"]
+  ];
+  window.RF4I18N.start({ dict: DICT, patterns: PATTERNS, post: POST, skip: ".md" });
 })();
