@@ -9,7 +9,7 @@ log:
 
 launcher:
   game_path: ""      # rf4_x64.exe 的绝对路径；也可在控制中心页面保存。
-  game_region: "CN" # 启动游戏时传给 -region 的值。
+  game_region: "EN" # 启动游戏时传给 -region 的值（本 fork 默认英文客户端）。
   hosts_switch: false # true 时：服务启动后自动把 api.rf4game.ru/com 指向 127.0.0.1，launcher 退出时自动还原；需以管理员身份运行 launcher。
 
 sqlite:
@@ -24,7 +24,7 @@ gateway:
   key_file: "certs/server.key"        # HTTPS 私钥；缺失时自动生成。
   advertise_host: "127.0.0.1"         # 登录应答中返回给客户端的 realtime 主机。
   advertise_port: 9341                # 登录应答中返回给客户端的 realtime 端口。
-  region: "CN"                        # 客户端区域值。
+  region: "EN"                        # 客户端区域值；EN 时 game.language 自动为 en。
   server_name: "RF4_566"              # 登录应答中返回的服务器名称。
   login_domain: "api.rf4game.ru"      # 主登录域名及证书主题。
   max_conns: 512                      # realtime 最大并发连接数。

@@ -63,7 +63,7 @@ Copy-Item config.example.yaml config.yaml
 
 - `config.example.yaml` 是入库模板；实际使用 `config.yaml`，不得提交运行配置。
 - `sqlite.path` 指向玩家库；`sqlite.static_path` 指向运行期只读的静态目录。
-- `launcher.game_path` 保存客户端路径，`launcher.game_region` 默认为 `CN`。
+- `launcher.game_path` 保存客户端路径，`launcher.game_region` 在配置模板中默认为 `EN`（本 fork 面向英文客户端；中文客户端改为 `CN`，并同步 `gateway.region`）。
 - 环境变量如 `RF4_SQLITE_PATH`、`RF4_SQLITE_STATIC_PATH`、`RF4_LOG_LEVEL`、`RF4_GAME_CLIENT_PATH` 可覆盖对应设置，完整列表见[配置模板](../config.example.yaml)。
 
 YAML 文件中的管理员用户名和密码会在启动时应用。账户不存在时会创建账户；已有账户的密码不同时会重置为配置中的密码。
