@@ -112,6 +112,7 @@
         if (nv !== node.value) node.value = nv;
       }
       for (var c = node.firstChild; c; c = c.nextSibling) translateNode(c);
+      if (opts.afterNode) opts.afterNode(node);
     }
 
     function run() {

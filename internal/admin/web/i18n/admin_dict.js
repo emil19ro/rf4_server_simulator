@@ -1258,5 +1258,16 @@
     [/([A-Za-z0-9)])类/g, "$1 (all)"],
     [/([A-Za-z0-9)])饵/g, "$1 bait"]
   ];
-  window.RF4I18N.start({ dict: DICT, patterns: PATTERNS, post: POST, skip: ".md" });
+  // Item rows show the first character of the name as an icon placeholder
+  // (<span class="ic">苹</span><b>苹果</b>): use the English name's first letter.
+  function afterNode(el) {
+    var ics = el.matches && el.matches("span.ic") ? [el] : (el.querySelectorAll ? el.querySelectorAll("span.ic") : []);
+    for (var i = 0; i < ics.length; i++) {
+      var ic = ics[i], name = ic.nextElementSibling;
+      if (!name || !/[一-鿿]/.test(ic.textContent)) continue;
+      var first = (name.textContent || "").trim().charAt(0);
+      if (first && !/[一-鿿]/.test(first) && ic.textContent !== first.toUpperCase()) ic.textContent = first.toUpperCase();
+    }
+  }
+  window.RF4I18N.start({ dict: DICT, patterns: PATTERNS, post: POST, skip: ".md", afterNode: afterNode });
 })();
