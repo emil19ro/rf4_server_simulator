@@ -86,6 +86,7 @@ const (
 	LanguageZH = "zh"
 	LanguageEN = "en"
 )
+
 // Weather 控制进程启动时生成的逐日天气 kind 序列。
 // 序列在本进程内固定，每次启动重新随机；关闭时沿用地图模板的固定顺序。
 type Weather struct {
