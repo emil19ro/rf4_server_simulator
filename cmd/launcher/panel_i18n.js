@@ -8,6 +8,7 @@
   "use strict";
   // Strings with a value in the middle; run before the plain dictionary.
   var PATTERNS = [
+    [/一切就绪，可以开始游戏了。已稳定运行 刚刚启动。/g, "All set, you can start the game. The server just started."],
     [/已完成 (\d+)\/3/g, "Done $1/3"],
     [/有新的(.+?)可以下载；当前版本也可以继续使用。/g, "A new $1 is available; you can keep using the current version."],
     [/检查于 (.+)/g, "Checked at $1"],

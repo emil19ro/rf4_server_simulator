@@ -82,6 +82,7 @@ func (s *Server) webHandler(webFS fs.FS) http.Handler {
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
-		_, _ = w.Write(injectBeforeBody(index, i18nScripts(s.lang)))
+		page := injectBeforeHead(index, ThemeBootScript(false))
+		_, _ = w.Write(injectBeforeBody(page, i18nScripts(s.lang)))
 	})
 }

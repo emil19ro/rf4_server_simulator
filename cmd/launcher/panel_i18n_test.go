@@ -32,9 +32,30 @@ func TestPanelPageDefaultLanguage(t *testing.T) {
 }
 
 func TestPanelPageWithoutBodyAppends(t *testing.T) {
+	// 没有 </head> 时主题脚本放最前面（首帧前生效），没有 </body> 时翻译脚本追加到末尾。
 	page := panelPage([]byte("<p>x</p>"), "en")
-	if !bytes.HasPrefix(page, []byte("<p>x</p>")) || !bytes.Contains(page, []byte("RF4_DEFAULT_LANG")) {
-		t.Fatalf("没有 </body> 时应追加到末尾：%q", page)
+	content := bytes.Index(page, []byte("<p>x</p>"))
+	theme := bytes.Index(page, []byte(`localStorage.getItem(k)`))
+	tr := bytes.Index(page, []byte("RF4_DEFAULT_LANG"))
+	if theme < 0 || content < theme || tr < content {
+		t.Fatalf("应为 主题脚本 → 原内容 → 翻译脚本：theme=%d content=%d tr=%d", theme, content, tr)
+	}
+}
+
+func TestPanelPageInjectsDarkThemeInHead(t *testing.T) {
+	page := string(panelPage([]byte("<html><head><style>.a{}</style></head><body></body></html>"), "en"))
+	boot := strings.Index(page, `localStorage.getItem(k)`)
+	dark := strings.Index(page, `:root[data-theme=dark]{`)
+	orig := strings.Index(page, `<style>.a{}</style>`)
+	head := strings.Index(page, "</head>")
+	if boot < 0 || dark < 0 || orig > boot || dark > head {
+		t.Fatalf("主题脚本与深色样式应注入在原有样式之后、</head> 之前：%q", page)
+	}
+	if !strings.Contains(page, `if(!v){v="dark";`) {
+		t.Fatal("未设置主题时应默认深色")
+	}
+	if !strings.Contains(page, `prefers-color-scheme: dark`) {
+		t.Fatal("控制面板应把「跟随系统」解析成 light/dark")
 	}
 }
 

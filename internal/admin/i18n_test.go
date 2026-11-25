@@ -38,6 +38,16 @@ func TestAdminIndexInjectsTranslatorBeforeBody(t *testing.T) {
 	if !strings.Contains(body, `<script type="module" src="app/main.js"></script>`) {
 		t.Fatal("原有入口脚本必须保留")
 	}
+	if !strings.Contains(body, `localStorage.getItem("rf4.theme.fork")`) {
+		t.Fatal("首访自动写入的 system 也要切到深色一次（rf4.theme.fork 标记）")
+	}
+	boot := strings.Index(body, `if(!v){v="dark";`)
+	if boot < 0 || boot > strings.Index(body, "</head>") {
+		t.Fatal("主题启动脚本应在 </head> 之前，未设置时默认深色")
+	}
+	if strings.Contains(body, `prefers-color-scheme`) {
+		t.Fatal("管理后台的「跟随系统」由 light-dark() 处理，不应解析成固定值")
+	}
 }
 
 func TestAdminDefaultLanguageIsChinese(t *testing.T) {

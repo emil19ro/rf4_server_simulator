@@ -1,0 +1,54 @@
+/* panel_dark.css — dark theme for the launcher control panel.
+ *
+ * Injected by the launcher (see panel_i18n.go); panel.html is left untouched.
+ * Active when <html data-theme="dark">, which the theme boot script sets from
+ * localStorage "rf4.theme" (shared with the admin console theme menu).
+ * Palette follows the admin console's dark "aerial" theme.
+ */
+:root[data-theme=dark]{
+  color-scheme:dark;
+  --bg:#141816;--surface:#1b2420;--surface-2:#101614;--surface-3:#22302a;
+  --line:#2c3b34;--line-strong:#3c5047;
+  --text:#e9efe6;--text-2:#c3cdc5;--muted:#93a196;
+  --accent:#d8b45a;--accent-ink:#101d19;--accent-soft:rgba(216,180,90,.14);
+  --ok:#7cc896;--ok-soft:rgba(124,200,150,.13);--warn:#d9a45a;--warn-soft:rgba(217,164,90,.14);--bad:#e0867a;--bad-soft:rgba(224,134,122,.13);
+  --ink:#e9efe6; /* section titles use var(--ink,#0f1a16) */
+}
+:root[data-theme=dark] body::before{opacity:.05}
+:root[data-theme=dark] .card{box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 14px 30px -26px rgba(0,0,0,.9)}
+:root[data-theme=dark] .tabs button.on{background:#e9efe6;color:#101d19;border-color:#e9efe6}
+:root[data-theme=dark] .btn{box-shadow:none}
+:root[data-theme=dark] .btn:hover{background:#22302a}
+:root[data-theme=dark] .btn.pri{color:#101d19}
+:root[data-theme=dark] .btn.pri:hover{background:#e3c172;border-color:#e3c172}
+:root[data-theme=dark] .btn.danger{border-color:rgba(224,134,122,.45);color:#e0867a}
+:root[data-theme=dark] .btn.danger:hover{border-color:#e0867a;color:#e0867a}
+:root[data-theme=dark] .pill.ok{border-color:rgba(124,200,150,.45);color:#7cc896}
+:root[data-theme=dark] .pill.warn{border-color:rgba(217,164,90,.5);color:#d9a45a}
+:root[data-theme=dark] .pill.bad{border-color:rgba(224,134,122,.5);color:#e0867a}
+:root[data-theme=dark] .notice.bad{background:rgba(224,134,122,.08);border-color:rgba(224,134,122,.3);color:#efb2a9}
+:root[data-theme=dark] .notice.warn{background:rgba(217,164,90,.08);border-color:rgba(217,164,90,.32);color:#ebc68f}
+:root[data-theme=dark] .notice.ok{background:rgba(124,200,150,.08);border-color:rgba(124,200,150,.3);color:#a9dcb9}
+:root[data-theme=dark] .update-banner,
+:root[data-theme=dark] .update-banner.warn{border-color:rgba(217,164,90,.4);background:rgba(217,164,90,.08);color:#ebc68f}
+:root[data-theme=dark] input[type=text],
+:root[data-theme=dark] .loginbox input{background:#101614;border-color:#3c5047;color:var(--text)}
+:root[data-theme=dark] .step.done .step-mark{background:#3f7f57;border-color:#3f7f57;color:#e9efe6}
+:root[data-theme=dark] .step.todo .step-mark{border-color:#d8b45a;color:#d8b45a}
+:root[data-theme=dark] .menu-list button.danger{color:#e0867a}
+:root[data-theme=dark] .log .lv.INFO,
+:root[data-theme=dark] .home-log .lv.INFO{color:#93a196}
+:root[data-theme=dark] .log .lv.WARN,
+:root[data-theme=dark] .home-log .lv.WARN{color:#d9a45a}
+:root[data-theme=dark] .log .lv.ERROR,
+:root[data-theme=dark] .home-log .lv.ERROR{color:#e0867a}
+:root[data-theme=dark] .log .ln.WARN .m,
+:root[data-theme=dark] .home-log .ln.WARN .m{color:#ebc68f}
+:root[data-theme=dark] .log .ln.ERROR .m,
+:root[data-theme=dark] .home-log .ln.ERROR .m{color:#efb2a9}
+:root[data-theme=dark] .version-connection.connected{color:#7cc896}
+:root[data-theme=dark] .version-connection.connected i{background:#7cc896}
+:root[data-theme=dark] .version-connection.checking{color:#d9a45a}
+:root[data-theme=dark] .version-connection.checking i{background:#d9a45a}
+:root[data-theme=dark] .version-connection.error{color:#e0867a}
+:root[data-theme=dark] .version-connection.error i{background:#e0867a}

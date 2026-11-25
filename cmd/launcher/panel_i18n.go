@@ -15,9 +15,22 @@ import (
 //go:embed panel_i18n.js
 var panelI18nJS []byte
 
-// panelPage 返回注入了翻译脚本的面板页面；lang 为默认语言（en 时默认英文，
-// 其他按中文），页面上的 EN/中文 切换按钮可覆盖并记在浏览器里。
+// panel_dark.css 是控制面板的深色主题（本 fork 默认深色），同样注入而不改 panel.html。
+//
+//go:embed panel_dark.css
+var panelDarkCSS []byte
+
+// panelPage 返回注入了主题与翻译脚本的面板页面；lang 为默认语言（en 时默认英文，
+// 其他按中文），页面上的 EN/中文 切换按钮可覆盖并记在浏览器里。主题与管理后台
+// 共用 localStorage "rf4.theme"，默认深色。
 func panelPage(html []byte, lang string) []byte {
+	var head bytes.Buffer
+	head.Write(admin.ThemeBootScript(true))
+	head.WriteString("<style>\n")
+	head.Write(panelDarkCSS)
+	head.WriteString("\n</style>\n")
+	html = admin.InjectBeforeHead(html, head.Bytes())
+
 	def := config.LanguageZH
 	if lang == config.LanguageEN {
 		def = config.LanguageEN
