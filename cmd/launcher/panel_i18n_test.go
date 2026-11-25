@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"rf4server/internal/config"
 )
 
 func TestPanelPageInjectsTranslatorBeforeBody(t *testing.T) {
@@ -56,6 +58,16 @@ func TestPanelPageInjectsDarkThemeInHead(t *testing.T) {
 	}
 	if !strings.Contains(page, `prefers-color-scheme: dark`) {
 		t.Fatal("控制面板应把「跟随系统」解析成 light/dark")
+	}
+}
+
+func TestTrayTextFollowsLanguage(t *testing.T) {
+	if got := (&app{}).tr("退出", "Exit"); got != "退出" {
+		t.Fatalf("未加载配置时应为中文：%q", got)
+	}
+	a := &app{cfg: &config.Config{Game: config.Game{Language: "en"}}}
+	if got := a.tr("退出", "Exit"); got != "Exit" {
+		t.Fatalf("language=en 时托盘应为英文：%q", got)
 	}
 }
 

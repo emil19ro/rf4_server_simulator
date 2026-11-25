@@ -36,6 +36,9 @@
       (CJK_CHAR.test(k) ? single : multi).push(k);
     });
     multi.sort(function (a, b) { return b.length - a.length; });
+    // One alternation over all phrases (longest first) instead of a loop per
+    // key: the admin dictionary carries thousands of database names.
+    var multiRe = multi.length ? new RegExp(multi.map(escapeRe).join("|"), "g") : null;
     // A single Chinese character (unit words like 件/条/级) is only replaced next
     // to a digit, space or edge, so names written in Chinese are not mangled.
     var singleRe = single.length
@@ -47,8 +50,8 @@
       if (has.call(dict, trimmed)) return text.replace(trimmed, dict[trimmed]);
       var out = text;
       for (var i = 0; i < patterns.length; i++) out = out.replace(patterns[i][0], patterns[i][1]);
-      for (var j = 0; j < multi.length && CJK.test(out); j++) {
-        if (out.indexOf(multi[j]) >= 0) out = out.split(multi[j]).join(dict[multi[j]]);
+      if (multiRe && CJK.test(out)) {
+        out = out.replace(multiRe, function (m) { return dict[m]; });
       }
       if (singleRe && CJK.test(out)) {
         out = out.replace(singleRe, function (_, pre, ch) { return pre + dict[ch]; });

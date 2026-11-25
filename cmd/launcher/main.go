@@ -250,16 +250,16 @@ var (
 func (a *app) onTrayReady() {
 	systray.SetIcon(iconColor(3)) // 初始灰色由状态回调刷新
 	systray.SetTitle("fish-localserver")
-	systray.SetTooltip("fish-localserver 本地服务器")
+	systray.SetTooltip(a.tr("fish-localserver 本地服务器", "fish-localserver local server"))
 
-	mItemPanel = systray.AddMenuItem("打开控制中心", "进程状态、日志与游戏管理")
-	mItemAdmin = systray.AddMenuItem("打开管理后台", "直接进入统一控制中心的管理页面")
+	mItemPanel = systray.AddMenuItem(a.tr("打开控制中心", "Open control center"), a.tr("进程状态、日志与游戏管理", "Process status, logs and game control"))
+	mItemAdmin = systray.AddMenuItem(a.tr("打开管理后台", "Open admin console"), a.tr("直接进入统一控制中心的管理页面", "Go straight to the admin page of the control center"))
 	systray.AddSeparator()
-	mItemStart = systray.AddMenuItem("启动全部", "按序启动两个游戏服务")
-	mItemStop = systray.AddMenuItem("停止全部", "停止全部游戏服务")
-	mItemRestart = systray.AddMenuItem("重启全部", "重启全部游戏服务")
+	mItemStart = systray.AddMenuItem(a.tr("启动全部", "Start all"), a.tr("按序启动两个游戏服务", "Start both game services in order"))
+	mItemStop = systray.AddMenuItem(a.tr("停止全部", "Stop all"), a.tr("停止全部游戏服务", "Stop all game services"))
+	mItemRestart = systray.AddMenuItem(a.tr("重启全部", "Restart all"), a.tr("重启全部游戏服务", "Restart all game services"))
 	systray.AddSeparator()
-	mItemQuit = systray.AddMenuItem("退出", "停止服务并退出")
+	mItemQuit = systray.AddMenuItem(a.tr("退出", "Exit"), a.tr("停止服务并退出", "Stop the services and exit"))
 
 	go func() {
 		for range mItemPanel.ClickedCh {
@@ -317,12 +317,21 @@ func updateTrayIcon(a *app) {
 	a.adminMu.RUnlock()
 	switch {
 	case running == 2 && adminReady:
-		a.setTray(0, "fish-localserver：全部就绪") // 绿
+		a.setTray(0, a.tr("fish-localserver：全部就绪", "fish-localserver: all ready")) // 绿
 	case running > 0 || adminReady:
-		a.setTray(1, fmt.Sprintf("fish-localserver：%d/2 游戏服务，管理后台=%v", running, adminReady)) // 黄
+		a.setTray(1, fmt.Sprintf(a.tr("fish-localserver：%d/2 游戏服务，管理后台=%v", "fish-localserver: %d/2 game services, admin=%v"), running, adminReady)) // 黄
 	default:
-		a.setTray(2, "fish-localserver：已停止") // 红
+		a.setTray(2, a.tr("fish-localserver：已停止", "fish-localserver: stopped")) // 红
 	}
+}
+
+// tr 按 game.language 二选一托盘文案（见 specs/changes/ui-english-i18n）；
+// 未加载配置时按中文。
+func (a *app) tr(zh, en string) string {
+	if a != nil && a.cfg != nil && a.cfg.Game.Language == config.LanguageEN {
+		return en
+	}
+	return zh
 }
 
 // setTray 记录并应用托盘图标/提示。systray 未就绪时只记录状态，

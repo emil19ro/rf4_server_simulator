@@ -53,6 +53,9 @@ type Server struct {
 
 	// 默认界面语言（见 i18n.go）；空值按中文。
 	lang string
+
+	// 数据库名称英文字典缓存（见 names.go）。
+	names namesCache
 }
 
 type plog struct{ l logger }

@@ -12,8 +12,8 @@ LOCAL_FILES = {
 PORTAL_FILES = {'index.html', 'local.js'}
 PORTAL_CSS = {'framework.css', 'local.css', 'portal.css', 'reference-ui.css'}
 STATIC_FILES = {'server_data/static.sqlite3', 'server_data/compat_parts.json'}
-OPTIONAL_LOCAL_FILES = {'ref/icons.zip'}
-MAX_OPTIONAL_FILE_BYTES = {'ref/icons.zip': 128 << 20}
+OPTIONAL_LOCAL_FILES = {'ref/icons.zip', 'ref/client_names.json'}
+MAX_OPTIONAL_FILE_BYTES = {'ref/icons.zip': 128 << 20, 'ref/client_names.json': 32 << 20}
 
 def allowed(name):
     p = PurePosixPath(name)

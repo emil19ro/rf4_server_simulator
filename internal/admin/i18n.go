@@ -52,6 +52,7 @@ func i18nScripts(lang string) []byte {
 	}
 	return []byte("<script>window.RF4_DEFAULT_LANG=" + strconv.Quote(lang) + ";</script>\n" +
 		`<script src="i18n/engine.js?v=` + i18nVersion + `"></script>` + "\n" +
+		`<script src="i18n/names_en.js"></script>` + "\n" +
 		`<script src="i18n/admin_dict.js?v=` + i18nVersion + `"></script>` + "\n")
 }
 
@@ -71,6 +72,12 @@ func injectBeforeBody(html, extra []byte) []byte {
 func (s *Server) webHandler(webFS fs.FS) http.Handler {
 	files := http.FileServer(http.FS(webFS))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/i18n/names_en.js" {
+			w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-cache")
+			_, _ = w.Write(s.namesScript(r.Context()))
+			return
+		}
 		if r.URL.Path != "/" && r.URL.Path != "" {
 			files.ServeHTTP(w, r)
 			return

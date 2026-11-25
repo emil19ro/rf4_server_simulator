@@ -1232,6 +1232,15 @@
     "、": ", "
   };
 
+  // Database names (items, fish, baits) from the client's own English
+  // localization, served by the admin as i18n/names_en.js (see names.go).
+  // UI strings above win when both define the same key.
+  var NAMES = window.RF4I18N_NAMES || {};
+  for (var k in NAMES) {
+    if (Object.prototype.hasOwnProperty.call(NAMES, k) && !Object.prototype.hasOwnProperty.call(DICT, k)) DICT[k] = NAMES[k];
+  }
+  DICT["系列"] = DICT["系列"] || "series";
+
   // The toggle button and native dialogs are handled by the engine.
   // Rendered documents (README, release notes in .md) are shown as-is: the
   // About page serves README.en.md in English instead.
