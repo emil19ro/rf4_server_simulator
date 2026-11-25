@@ -23,6 +23,11 @@ const updateStateFile = "update_state.json"
 // 对镜像与用户带宽都毫无压力。
 const updateCheckInterval = 2 * time.Hour
 
+// updateCheckEnabled 本 fork 只在本地编译、不发布 release：远端 version.json
+// 指向上游的中文发布包，检测结论无意义还会把用户引去替换本地英文构建，
+// 因此固定跳过（按本地构建口径显示「跳过检测」），也不再对外发起请求。
+const updateCheckEnabled = false
+
 // updateHealth 是控制中心版本卡片读取的检测连接状态。
 // Checking/Connected 分开表达“正在检测”和“最近一次检测是否成功”；
 // 失败只影响这张信息卡片，不参与任何启停、seed 或游戏操作判断。
@@ -63,7 +68,7 @@ func (a *app) updateHealthSnapshot() updateHealth {
 // runUpdateChecks 后台检测循环：延迟 5s 首查（避开启动高峰），之后每
 // 2h 复查，直到 launcher 退出。dev 构建（无 BuildTs 注入）不检测。
 func (a *app) runUpdateChecks() {
-	if buildinfo.BuildTs == "0" {
+	if !updateCheckEnabled || buildinfo.BuildTs == "0" {
 		a.finishUpdateCheck(updatecheck.ErrUnknownLocalBuildTs)
 		a.log.Warn("跳过更新检测: " + updatecheck.ErrUnknownLocalBuildTs.Error())
 		return

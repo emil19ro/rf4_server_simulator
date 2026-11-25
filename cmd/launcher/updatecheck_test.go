@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"rf4server/internal/buildinfo"
 	"rf4server/internal/config"
@@ -170,3 +171,36 @@ type testLauncherLogger struct{}
 func (testLauncherLogger) Info(string)  {}
 func (testLauncherLogger) Warn(string)  {}
 func (testLauncherLogger) Error(string) {}
+
+// 本 fork 只在本地编译：更新检测固定跳过，不发起任何请求，
+// 控制中心按「本地构建 / 跳过检测」展示（面板据 error 中的 BuildTs 识别）。
+func TestRunUpdateChecksSkippedInFork(t *testing.T) {
+	hits := 0
+	src := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		_, _ = w.Write([]byte(`{"schema":1}`))
+	}))
+	defer src.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a := &app{
+		cfg:     &config.Config{},
+		log:     panelLogger{},
+		ctx:     ctx,
+		updates: updatecheck.New([]string{src.URL}, filepath.Join(t.TempDir(), "update_state.json")),
+	}
+	done := make(chan struct{})
+	go func() { a.runUpdateChecks(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("runUpdateChecks 应立即返回，不进入周期检测")
+	}
+	h := a.updateHealthSnapshot()
+	if h.Checking || h.Connected || !strings.Contains(h.Error, "BuildTs") {
+		t.Fatalf("应显示为跳过检测：%+v", h)
+	}
+	if hits != 0 {
+		t.Fatalf("不应请求远端 version.json，实际 %d 次", hits)
+	}
+}
