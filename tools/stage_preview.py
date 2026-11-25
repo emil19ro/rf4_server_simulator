@@ -19,7 +19,7 @@ def allowed(name):
     p = PurePosixPath(name)
     if p.is_absolute() or '..' in p.parts:
         return False
-    if name in {'README.md', 'LICENSE', 'config.example.yaml'} | STATIC_FILES | OPTIONAL_LOCAL_FILES:
+    if name in {'README.md', 'README.en.md', 'LICENSE', 'config.example.yaml'} | STATIC_FILES | OPTIONAL_LOCAL_FILES:
         return True
     if p.parts[0:1] == ('docs',) and p.suffix == '.md':
         return True

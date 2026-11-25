@@ -530,6 +530,7 @@ func (a *app) initAdmin(ctx context.Context) error {
 		return err
 	}
 	srv := admin.NewServer(a.cfg.Admin, db, adminLogger{a.log}, admin.WebFS())
+	srv.SetLanguage(a.cfg.Game.Language)
 	// 更新检测可能先于管理后台就绪已有结论，补推一次。
 	var update *updatecheck.Result
 	if a.updates != nil {

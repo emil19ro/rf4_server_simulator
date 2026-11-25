@@ -50,6 +50,9 @@ type Server struct {
 
 	// 可选图标包按 Server 实例缓存；缺包或坏包保持 404 降级。
 	icons iconArchive
+
+	// 默认界面语言（见 i18n.go）；空值按中文。
+	lang string
 }
 
 type plog struct{ l logger }
@@ -136,7 +139,7 @@ func NewServer(cfg config.Admin, db *store.DB, log logger, webFS fs.FS) *Server 
 	// 物品与鱼种图标同理由 ref/ 运行时加载（见 item_icons.go）。
 	mux.Handle("GET /icons/", http.HandlerFunc(s.handleIcons))
 	if webFS != nil {
-		mux.Handle("/", http.FileServer(http.FS(webFS)))
+		mux.Handle("/", s.webHandler(webFS))
 	}
 	s.mux = mux
 	s.srv = &http.Server{Addr: cfg.HTTPAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
@@ -922,8 +925,11 @@ func (s *Server) handleBan(w http.ResponseWriter, r *http.Request) {
 // handleAbout 返回 README.md，供管理后台「关于」页展示。
 // 优先读取发布包内的本地文件；缺失时回退到编译期内嵌副本。
 func (s *Server) handleAbout(w http.ResponseWriter, r *http.Request) {
-	content := rf4server.README
-	if path, err := findLocalFile("README.md"); err == nil {
+	content, name := rf4server.README, "README.md"
+	if s.lang == config.LanguageEN {
+		content, name = rf4server.READMEEn, "README.en.md"
+	}
+	if path, err := findLocalFile(name); err == nil {
 		if local, err := readLocalTextFile(path); err == nil {
 			content = local
 		}

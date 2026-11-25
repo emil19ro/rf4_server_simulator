@@ -84,6 +84,7 @@ func main() {
 	}
 
 	srv := admin.NewServer(cfg.Admin, db, log, admin.WebFS())
+	srv.SetLanguage(cfg.Game.Language)
 	adminErrCh, err := srv.Start()
 	if err != nil {
 		log.Error("管理后台监听失败", "err", err)

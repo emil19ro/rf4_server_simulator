@@ -1,19 +1,11 @@
-// panel_i18n.js — English translation layer for the launcher control panel.
+// panel_i18n.js — English dictionary for the launcher control panel.
 //
-// Injected by the launcher when serving panel.html (see panel_i18n.go), so
-// panel.html itself stays untouched and upstream updates merge cleanly.
-// Chinese stays the source text; this script swaps visible text, attributes
-// and later DOM updates to English, and adds an EN / 中文 toggle.
-// Default language comes from config (game.language); the toggle choice is
-// remembered in localStorage. New untranslated strings simply stay Chinese.
+// Injected by the launcher together with the shared engine
+// (internal/admin/web/i18n/engine.js) when serving panel.html (see
+// panel_i18n.go), so panel.html itself stays untouched and upstream updates
+// merge cleanly. New untranslated strings simply stay Chinese.
 (function () {
   "use strict";
-  var KEY = "rf4.panel.lang";
-  var lang = (function () {
-    try { var v = localStorage.getItem(KEY); if (v === "en" || v === "zh") return v; } catch (e) {}
-    return window.RF4_DEFAULT_LANG === "en" ? "en" : "zh";
-  })();
-
   // Strings with a value in the middle; run before the plain dictionary.
   var PATTERNS = [
     [/已完成 (\d+)\/3/g, "Done $1/3"],
@@ -71,6 +63,7 @@
     "管理后台里可以直接编辑": "Can be edited directly in the admin console",
     "账号密码在 config.yaml 的 admin 段": "Username and password are in the admin section of config.yaml",
     "先填密码": "Enter the password first",
+    "登录失败（HTTP": "Login failed (HTTP",
     "连不上管理后台": "Cannot reach the admin console",
     "已读取": "Loaded",
     "库未就绪": "Database not ready",
@@ -248,87 +241,6 @@
     "；": "; "
   };
 
-  var CJK = /[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]/;
-  var KEYS = Object.keys(DICT).sort(function (a, b) { return b.length - a.length; });
-
-  function tr(text) {
-    if (!text || !CJK.test(text)) return text;
-    var trimmed = text.trim();
-    if (Object.prototype.hasOwnProperty.call(DICT, trimmed)) {
-      return text.replace(trimmed, DICT[trimmed]);
-    }
-    var out = text;
-    for (var i = 0; i < PATTERNS.length; i++) out = out.replace(PATTERNS[i][0], PATTERNS[i][1]);
-    for (var j = 0; j < KEYS.length && CJK.test(out); j++) {
-      if (out.indexOf(KEYS[j]) >= 0) out = out.split(KEYS[j]).join(DICT[KEYS[j]]);
-    }
-    return out;
-  }
-  window.RF4_TR = tr;
-
-  var ATTRS = ["placeholder", "title", "aria-label", "alt", "data-tip"];
-  var SKIP = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1, CODE: 1, PRE: 1 };
-  // Raw server log output is shown as-is (log lines are not UI text).
-  var NO_I18N = "#logs, [data-no-i18n]";
-
-  function untranslatable(el) {
-    return !el || SKIP[el.nodeName] || (el.closest && el.closest(NO_I18N));
-  }
-
-  function translateNode(node) {
-    if (node.nodeType === 3) {
-      if (untranslatable(node.parentNode)) return;
-      var t = tr(node.nodeValue);
-      if (t !== node.nodeValue) node.nodeValue = t;
-      return;
-    }
-    if (node.nodeType !== 1 || untranslatable(node)) return;
-    for (var a = 0; a < ATTRS.length; a++) {
-      var v = node.getAttribute && node.getAttribute(ATTRS[a]);
-      if (v && CJK.test(v)) node.setAttribute(ATTRS[a], tr(v));
-    }
-    if ((node.nodeName === "INPUT" || node.nodeName === "BUTTON") && node.type !== "text" && node.value && CJK.test(node.value)) {
-      node.value = tr(node.value);
-    }
-    for (var c = node.firstChild; c; c = c.nextSibling) translateNode(c);
-  }
-
-  function addToggle() {
-    var b = document.createElement("button");
-    b.type = "button";
-    b.id = "rf4LangToggle";
-    b.textContent = lang === "en" ? "中文" : "EN";
-    b.title = lang === "en" ? "切换到中文" : "Switch to English";
-    b.setAttribute("style", "position:fixed;right:14px;bottom:14px;z-index:9999;padding:6px 12px;border-radius:999px;" +
-      "border:1px solid rgba(127,127,127,.45);background:rgba(20,24,30,.85);color:#fff;font:600 12px/1.2 system-ui,sans-serif;cursor:pointer");
-    b.addEventListener("click", function () {
-      try { localStorage.setItem(KEY, lang === "en" ? "zh" : "en"); } catch (e) {}
-      location.reload();
-    });
-    document.body.appendChild(b);
-  }
-
-  function start() {
-    addToggle();
-    if (lang !== "en") return;
-    document.documentElement.lang = "en";
-    document.title = tr(document.title);
-    translateNode(document.body);
-    // window.confirm/alert texts are built in code; translate them too.
-    var nativeConfirm = window.confirm, nativeAlert = window.alert;
-    window.confirm = function (m) { return nativeConfirm.call(window, tr(String(m))); };
-    window.alert = function (m) { return nativeAlert.call(window, tr(String(m))); };
-    new MutationObserver(function (records) {
-      for (var i = 0; i < records.length; i++) {
-        var r = records[i];
-        if (r.type === "characterData") translateNode(r.target);
-        else if (r.type === "attributes") translateNode(r.target);
-        else for (var k = 0; k < r.addedNodes.length; k++) translateNode(r.addedNodes[k]);
-      }
-      if (CJK.test(document.title)) document.title = tr(document.title);
-    }).observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS });
-  }
-
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
-  else start();
+  // Raw server log output (#logs) is shown as-is: log lines are not UI text.
+  window.RF4I18N.start({ dict: DICT, patterns: PATTERNS, skip: "#logs" });
 })();

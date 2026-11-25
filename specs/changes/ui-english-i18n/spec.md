@@ -44,7 +44,13 @@ Status: in-progress
    翻译层，launcher 服务 `/` 时注入到 `</body>` 前（`panelPage`），**不改 panel.html**，
    上游面板改动可直接合入；新增未翻译文案保持中文。默认语言 = `game.language`，
    右下角 EN / 中文 按钮可覆盖（localStorage）。`#logs` 内的原始日志不翻译。
-3. **管理后台**：同上，按页面分批。
+3. **管理后台**（已实现）：翻译引擎抽为共享的 `internal/admin/web/i18n/engine.js`
+   （控制面板经 `admin.I18nEngineJS()` 内联同一份），后台字典 `admin_dict.js`；
+   admin 服务 `index.html` 时注入（带内容哈希 `?v=`，升级后不吃旧缓存），SPA 源文件不改。
+   默认语言经 `Server.SetLanguage(game.language)`；「关于」页英文时读 `README.en.md`
+   （发布包同时带上）；渲染出的文档（`.md`）不做逐词替换。单字（件/条/级…）只在
+   数字或空白旁替换，避免误伤中文名称；属性只在值变化时回写（防 MutationObserver 死循环）。
+   数据库里的鱼名、物品名不在此阶段（见阶段 4/5）。
 4. **游戏内查鱼**（`fish_query_*`）：回复文案与英文鱼名输入解析，单独评估。
 
 数据与迁移：无表结构变更，不写静态库。

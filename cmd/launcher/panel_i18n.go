@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"strconv"
 
+	"rf4server/internal/admin"
 	"rf4server/internal/config"
 )
 
@@ -25,6 +26,8 @@ func panelPage(html []byte, lang string) []byte {
 	inject.WriteString("<script>window.RF4_DEFAULT_LANG=")
 	inject.WriteString(strconv.Quote(def))
 	inject.WriteString(";</script>\n<script>\n")
+	inject.Write(admin.I18nEngineJS()) // 与管理后台共用同一份翻译引擎
+	inject.WriteString("\n</script>\n<script>\n")
 	inject.Write(panelI18nJS)
 	inject.WriteString("\n</script>\n")
 

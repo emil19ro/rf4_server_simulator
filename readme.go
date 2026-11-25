@@ -7,3 +7,8 @@ import _ "embed"
 //
 //go:embed README.md
 var README string
+
+// READMEEn 是 README.en.md 的编译期内嵌副本（英文界面的「关于」页使用）。
+//
+//go:embed README.en.md
+var READMEEn string
