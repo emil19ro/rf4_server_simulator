@@ -38,7 +38,7 @@ export default async function shop(params) {
 
   const body = h('div', {}, empty('读取中…'));
   const aside = h('div');
-  const tabsEl = pageTabs(TABS.map((t) => [t.key, t.label]), tabKey, (k) => navigate('shop', (storeId ? storeId + '/' : '') + k));
+  const tabsEl = pageTabs(TABS.map((t) => [t.key, t.label]), tabKey, (k) => navigate('shop', storeId || '', k));
 
   const form = new Form();
   setLeaveGuard(() => form.isDirty());
@@ -160,7 +160,7 @@ export default async function shop(params) {
     });
     const sel = h('select', {
       id: 'storeSel', style: { width: '300px', maxWidth: '46vw' },
-      onchange: (e) => navigate('shop', e.target.value + '/' + tabKey),
+      onchange: (e) => navigate('shop', e.target.value, tabKey),
     }, ...[...groups.entries()].map(([k, list]) => h('optgroup', { label: `${k}（${list.length}）` },
       ...list.map((s) => h('option', { value: s.store_id, selected: s.store_id === storeId },
         `${storeLabel(s)} · ${s.item_count || 0} 件`)))));
@@ -202,7 +202,7 @@ export default async function shop(params) {
       const ka = storeKind(a.store_id); const kb = storeKind(b.store_id);
       return ka === kb ? a.store_id.localeCompare(b.store_id) : ka.localeCompare(kb);
     });
-    const rows = sorted.map((s) => h('tr', { class: s.store_id === storeId ? 'on' : null, style: { cursor: 'pointer' }, onclick: () => navigate('shop', s.store_id + '/' + tabKey) },
+    const rows = sorted.map((s) => h('tr', { class: s.store_id === storeId ? 'on' : null, style: { cursor: 'pointer' }, onclick: () => navigate('shop', s.store_id, tabKey) },
       h('td', {}, h('b', { text: storeName(s) }), h('div', { class: 'mono', text: s.store_id })),
       h('td', { class: 'dim', text: storeKind(s.store_id) }),
       h('td', { class: 'num', text: String(s.item_count || 0) }),
