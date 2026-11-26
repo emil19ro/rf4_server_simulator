@@ -320,6 +320,33 @@ func TestBaitPaceScoreEvidence(t *testing.T) {
 	}
 }
 
+func TestMountedBaitPaceUsesLegacyTierWhenCurrentIDHasNoEvidence(t *testing.T) {
+	s, db := seedPaceTest(t)
+	rod := baitTestRod(t, s)
+	baitTestMount(t, s, rod, "clas_20045", 1, 250)
+	baitTestMount(t, s, rod, "dough_garlic", 1, 350)
+	st := &FishState{Loc: "level_900_rules", GearGuid: rod, RigType: 12}
+	sess := newProbeSess(s)
+
+	// 先只有配方编号的记录，再加入成品编号的记录；后者应优先。
+	for _, tc := range []struct {
+		baitID string
+		tier   int
+		want   float64
+	}{
+		{"craft_bait_dough_garlic", 3, 1.0},
+		{"dough_garlic", 2, 0.8},
+	} {
+		if _, err := db.SQL.Exec(`INSERT INTO companion_bait_fish(bait_id,fish_key,tier,evidence)
+			VALUES(?, 'c.roach', ?, 10)`, tc.baitID, tc.tier); err != nil {
+			t.Fatal(err)
+		}
+		if got := s.computePaceState(sess, st, true).Score; got != tc.want {
+			t.Errorf("挂大蒜面团，加入 %s 的记录后对口分 = %g，期望 %g", tc.baitID, got, tc.want)
+		}
+	}
+}
+
 func TestGroundbaitPaceFactorCompressesAndExemptsLure(t *testing.T) {
 	s, _ := newRigTestServer(t)
 	ctx := t.Context()

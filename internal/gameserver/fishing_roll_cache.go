@@ -220,7 +220,7 @@ func (s *Server) cachedBaitTiers(ctx context.Context, c fishRollContext, bait st
 	}
 	cache := rollCache(c)
 	if cache == nil {
-		return s.DB.BaitTiers(ctx, bait)
+		return s.loadBaitTiers(ctx, bait)
 	}
 	cache.mu.Lock()
 	if cache.baitTierLoaded[bait] {
@@ -229,18 +229,19 @@ func (s *Server) cachedBaitTiers(ctx context.Context, c fishRollContext, bait st
 		return tiers
 	}
 	cache.mu.Unlock()
-	tiers := s.DB.BaitTiers(ctx, bait)
-	if len(tiers) == 0 {
-		// companion_bait_fish 预置快照用的是旧 item_id（craft_bait_* / c_bleak），
-		// 这些 id 在当前 item_def 里已不存在；不改名会让 264 行证据永久失效。
-		if old, ok := legacyBaitIDs[bait]; ok {
-			tiers = s.DB.BaitTiers(ctx, old)
-		}
-	}
+	tiers := s.loadBaitTiers(ctx, bait)
 	cache.mu.Lock()
 	cache.baitTiers[bait] = tiers
 	cache.baitTierLoaded[bait] = true
 	cache.mu.Unlock()
+	return tiers
+}
+
+func (s *Server) loadBaitTiers(ctx context.Context, bait string) map[string]int64 {
+	tiers := s.DB.BaitTiers(ctx, bait)
+	if old, ok := legacyBaitIDs[bait]; ok && len(tiers) == 0 {
+		return s.DB.BaitTiers(ctx, old)
+	}
 	return tiers
 }
 
