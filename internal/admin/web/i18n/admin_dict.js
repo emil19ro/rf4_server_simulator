@@ -1466,6 +1466,9 @@
     "鱼饵偏好读取失败，轮换快照未取得。": "Failed to load bait preferences; rotation snapshot unavailable.",
     "店铺": "Store",
     "鱼获档位熟练度倍数必须在 0 ~ 20 之间": "Catch-tier proficiency multiplier must be between 0 and 20",
+    "拟饵按鱼种食性筛选。浮钓落点有水深数据时，饵离活动水层越远，该鱼的权重越低。": "Lures are filtered by species diet. For float fishing with known depth at the landing spot, the farther the bait is from the fish's active layer, the lower that fish's weight.",
+    "错层最低权重倍率": "Wrong-layer minimum weight multiplier",
+    "浮钓偏离栖息带越远，鱼种权重越低。偏差达到落点水深的 30% 时降到此倍率，水深未知时跳过。其他钓法超出 15% 容差即用此倍率。": "The farther a float rig is from the habitat band, the lower the species weight. At a deviation of 30% of the spot's depth it drops to this multiplier; skipped when depth is unknown. Other methods use this multiplier beyond a 15% tolerance.",
 
     // ---- punctuation (applied last, after longer phrases) ----
     "「": "\"",
