@@ -296,9 +296,15 @@ func (s *Server) biteOffLeader(ctx *Ctx, st *FishState, fish *RolledFish, leader
 	if len(syncGUIDs) > 0 {
 		ctx.Sess.Push4_22ItemGUIDs(syncGUIDs)
 	}
-	ctx.Sess.pushSystemChat(fmt.Sprintf("牙齿咬断了%s，鱼跑了", map[string]string{
-		"leader": "引线", "line": "主线",
-	}[part]))
+	if s.langEN() {
+		ctx.Sess.pushSystemChat(fmt.Sprintf("The fish bit through the %s and got away", map[string]string{
+			"leader": "leader", "line": "main line",
+		}[part]))
+	} else {
+		ctx.Sess.pushSystemChat(fmt.Sprintf("牙齿咬断了%s，鱼跑了", map[string]string{
+			"leader": "引线", "line": "主线",
+		}[part]))
+	}
 	if s.log != nil {
 		s.log.Info("咬断线组", "rod", shortGUID(rodGUID), "fish", fish.Species,
 			"weight_g", fish.WeightG, "part", part, "leader_kg", roundTo(leaderKg, 2))
