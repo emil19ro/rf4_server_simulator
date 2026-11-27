@@ -25,7 +25,7 @@ func readOverloadProtection(ctx context.Context, db overloadProtectionReader, ui
 
 // 钓具助手采用两级菜单交互：
 //
-//	一级：1 【满红不爆】 / 2 【耐力播报】
+//	一级：1 【满红不爆】 / 2 【耐力播报】 / 3 【酒兴播报】
 //	二级（发功能序号后进入）：只响应 开(y) 关(n) 说明(h) 返回(b)；
 //	                        未知输入重复二级菜单；b 退回一级。
 type gearFeature struct {
@@ -41,12 +41,13 @@ const gearSep = "─────────────────────
 var gearFeatures = map[string]gearFeature{
 	"overload": {"【满红不爆】", "已开启，对你的所有鱼竿生效。", "已关闭，恢复正常装备损坏规则。", "【满红不爆】：防止断件与锁轮过载烧毁；普通磨损、自然脱钩及主动剪线不变，不修复已有损伤。"},
 	"stamina":  {"【耐力播报】", "已开启：搏鱼期间每 5 秒在聊天框显示当前鱼的耐力与超载。", "已关闭。", "【耐力播报】：搏鱼期间每 5 秒在聊天框显示当前鱼的耐力与超载。耐力是这尾鱼还剩多少体力，会一路掉到 0；超载是这尾鱼此刻的拉力超出整根钓组最大拉力的百分比，0% 表示拉得动（小鱼恒为 0%），数字越大越拉不动，鱼乏了它会自己降下来。仅在当前手持竿进入搏鱼时播报。"},
+	"drink":    {"【酒兴播报】", "已开启：喝酒当刻与每 30 秒在聊天框显示已喝瓶数与酒兴剩余（现实分秒）。", "已关闭。", "【酒兴播报】：喝酒当刻立即在聊天框显示当前已喝几瓶、酒兴还剩多久，之后每 30 秒刷新一次剩余时间，直到酒兴结束。剩余时间按现实时间显示（分:秒），不看游戏内时钟。多瓶叠加时显示总数与最长的一瓶。默认关闭。"},
 }
 
 // gearCommand 是一级解析结果：mode 为 help/unknown/cmd。
 type gearCommand struct {
 	mode    string // "help" | "unknown" | "cmd"
-	feature string // "overload" | "stamina"
+	feature string // "overload" | "stamina" | "drink"
 	action  string // ""=进入二级看状态 | "on" | "off" | "desc" | "back"
 }
 
@@ -63,6 +64,8 @@ func parseGearCommand(text string) gearCommand {
 		head = "overload"
 	case "2", "耐力", "stamina", "Stamina", "STAMINA":
 		head = "stamina"
+	case "3", "酒兴", "喝酒", "饮酒", "drink", "Drink", "DRINK":
+		head = "drink"
 	case "开", "开启", "关", "关闭", "状态":
 		// 两级菜单之前的单字指令，语义是满红不爆。保留成一级快捷别名：
 		// 老玩家不必先记序号，也不会因为菜单化而失去「开关」这个动作。
@@ -137,7 +140,7 @@ func gearReply(f gearFeature, action string, enabled bool) (next bool, reply str
 }
 
 func gearAssistantHelp() string {
-	items := []string{"1  【满红不爆】", "2  【耐力播报】"}
+	items := []string{"1  【满红不爆】", "2  【耐力播报】", "3  【酒兴播报】"}
 	// 每行下面都跟一条分隔线（含最后一行），形成下划线效果。
 	return strings.Join(items, "\n"+gearSep+"\n") + "\n" + gearSep
 }
@@ -251,6 +254,8 @@ func (s *Server) gearReadFlag(c context.Context, uid int64, feature string) (boo
 	key := overloadProtectionKey(uid)
 	if feature == "stamina" {
 		key = staminaReportKey(uid)
+	} else if feature == "drink" {
+		key = drinkReportKey(uid)
 	}
 	tx, err := beginEconomyTx(c, s.DB)
 	if err != nil {
@@ -294,6 +299,8 @@ func (s *Server) gearSubAction(ctx *Ctx, uid int64, feature, action string) ([]b
 	key := overloadProtectionKey(uid)
 	if feature == "stamina" {
 		key = staminaReportKey(uid)
+	} else if feature == "drink" {
+		key = drinkReportKey(uid)
 	}
 	enabled, err := readKVFlag(c, tx, key)
 	if err != nil {
@@ -333,6 +340,11 @@ func (s *Server) gearSubAction(ctx *Ctx, uid int64, feature, action string) ([]b
 		case "stamina":
 			// 设置已落库，清掉进程内缓存，下一条 14/8 重新读。
 			s.invalidateStaminaFlag(uid)
+		case "drink":
+			// 开启时立刻补一条当前酒兴（若正有 buff），不必等到下一次心跳。
+			if next {
+				ctx.AfterResponse(func() { s.maybePushDrinkReport(ctx.Sess, time.Now()) })
+			}
 		}
 	}
 	ctx.AfterResponse(func() { s.notifyMail(ctx.Sess.pushCtx(), uid, mailID) })

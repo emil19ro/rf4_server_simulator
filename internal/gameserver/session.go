@@ -52,6 +52,11 @@ type Session struct {
 	happyOpMu    sync.Mutex
 	happyStatus  store.HappyHourStatus
 
+	// 酒兴播报去重：文本 + 上次推送时刻，避免喝酒当刻与心跳重复刷屏
+	drinkReportMu   sync.Mutex
+	drinkReportText string
+	drinkReportAt   time.Time
+
 	log *slog.Logger
 }
 
@@ -261,6 +266,9 @@ func (s *Session) startKeepalive() {
 				s.keepaliveTicks++
 				if s.keepaliveTicks%6 == 0 {
 					s.expireRentalTickets()
+					// 酒兴播报刷新：每 6 拍（约 30 秒）推一次逐瓶剩余时间，
+					// 让聊天框里的剩余分秒随时间递减。开关默认关，无酒兴不推。
+					s.Srv.maybePushDrinkReport(s, time.Now())
 					// 有已启表的钓鱼游时同步推档案：客户端徽章的剩余时间
 					// 只在档案对象替换时重算，不推就一直显示旧值。
 					if s.hasTickingTrips(s.pushCtx()) {

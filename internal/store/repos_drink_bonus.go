@@ -97,6 +97,27 @@ func AdvanceDrinkBonusesTx(ctx context.Context, tx *sql.Tx, uid int64, runKey st
 	return statuses, rows.Err()
 }
 
+// DrinkBonusStatuses 只读当前仍有效的逐瓶效果，不推进时钟。
+// 计时推进仍由 AdvanceDrinkBonuses 在心跳/结算时负责；这里只供 UI 播报取数，
+// 避免为了读一次剩余时间就多写一次 drink_bonus_clock。
+func (d *DB) DrinkBonusStatuses(ctx context.Context, uid int64) ([]DrinkBonusStatus, error) {
+	rows, err := d.SQL.QueryContext(ctx, `SELECT category,peak,remaining_millis,duration_millis,source_guid
+		FROM drink_bonus_effect WHERE uid=? AND remaining_millis>0 ORDER BY category,id`, uid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	statuses := make([]DrinkBonusStatus, 0)
+	for rows.Next() {
+		var status DrinkBonusStatus
+		if err := rows.Scan(&status.Category, &status.Peak, &status.RemainingMillis, &status.DurationMillis, &status.SourceGUID); err != nil {
+			return nil, err
+		}
+		statuses = append(statuses, status)
+	}
+	return statuses, rows.Err()
+}
+
 // AddDrinkBonusTx 每瓶插入一条独立效果；同类可叠加，同一时刻最多保留最近 10 瓶。
 func AddDrinkBonusTx(ctx context.Context, tx *sql.Tx, uid int64, category string, peak float64, duration time.Duration, sourceGUID string) error {
 	if tx == nil || uid <= 0 || strings.TrimSpace(category) == "" || peak < 0 || peak > 1 || duration.Milliseconds() <= 0 {

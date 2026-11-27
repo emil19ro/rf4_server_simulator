@@ -234,5 +234,10 @@ func (s *Server) useAlcoholDrink(ctx *Ctx) ([]byte, bool) {
 		// 恢复生效后立即补推一次 2/2，让对应状态条平滑回升。
 		ctx.AfterResponse(func() { pushKeepalive(ctx.Sess) })
 	}
+	if isDrink {
+		// 酒兴播报：喝酒当刻即时推一条（开关默认关）。用 AfterResponse 里的
+		// 新时刻，而非事务开始时刻，避免在慢事务里剩余时间看起来少了几秒。
+		ctx.AfterResponse(func() { s.maybePushDrinkReport(ctx.Sess, time.Now()) })
+	}
 	return body, true
 }
