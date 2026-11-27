@@ -11,10 +11,10 @@ import (
 
 func TestDrinkReportText(t *testing.T) {
 	cases := []struct {
-		name     string
-		bottles  int
-		longest  time.Duration
-		want     string
+		name      string
+		bottles   int
+		longest   time.Duration
+		want      string
 		wantEmpty bool
 	}{
 		{"one bottle", 1, 92 * time.Second, "[酒兴] 已喝 1 瓶 · 剩余 01分32秒", false},
