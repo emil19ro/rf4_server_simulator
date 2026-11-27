@@ -229,15 +229,18 @@ func (s *Server) useAlcoholDrink(ctx *Ctx) ([]byte, bool) {
 	if len(updated) > 0 {
 		change.Updated = []string{row.GUID}
 	}
-	ctx.AfterResponse(func() { ctx.Sess.pushBaitChange(change) })
+	ctx.AfterResponse(func() {
+		ctx.Sess.pushBaitChange(change)
+		if isDrink {
+			// 酒兴播报：喝酒当刻即时推一条（开关默认关）。合并进已有的
+			// AfterResponse 回调，避免多注册一个回调破坏 4/8 的响应结构断言。
+			// 用回调执行时刻，而非事务开始时刻，避免慢事务里剩余时间少几秒。
+			s.maybePushDrinkReport(ctx.Sess, time.Now())
+		}
+	})
 	if isConsumable {
 		// 恢复生效后立即补推一次 2/2，让对应状态条平滑回升。
 		ctx.AfterResponse(func() { pushKeepalive(ctx.Sess) })
-	}
-	if isDrink {
-		// 酒兴播报：喝酒当刻即时推一条（开关默认关）。用 AfterResponse 里的
-		// 新时刻，而非事务开始时刻，避免在慢事务里剩余时间看起来少了几秒。
-		ctx.AfterResponse(func() { s.maybePushDrinkReport(ctx.Sess, time.Now()) })
 	}
 	return body, true
 }
