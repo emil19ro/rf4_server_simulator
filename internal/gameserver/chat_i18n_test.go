@@ -3,11 +3,21 @@ package gameserver
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"rf4server/internal/config"
 	"rf4server/internal/proto"
 	"rf4server/internal/store"
 )
+
+func TestDrinkReportTextEnglish(t *testing.T) {
+	if got := drinkReportTextEN(2, 90*time.Second+time.Millisecond); got != "[Drink] 2 bottle(s) · 01m31s left" {
+		t.Fatalf("drinkReportTextEN = %q", got)
+	}
+	if got := drinkReportTextEN(0, time.Minute); got != "" {
+		t.Fatalf("no bottles should yield empty text, got %q", got)
+	}
+}
 
 func TestChatLanguageDefaultsToChinese(t *testing.T) {
 	s := &Server{}

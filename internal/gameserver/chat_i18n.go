@@ -2,6 +2,8 @@ package gameserver
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"rf4server/internal/config"
 )
@@ -47,4 +49,13 @@ func (s *Server) gradeChatName(grade int64) string {
 		return "unique trophy"
 	}
 	return "regular"
+}
+
+// drinkReportTextEN drinkReportText 的英文版，取整与空串规则一致。
+func drinkReportTextEN(bottles int, longest time.Duration) string {
+	if drinkReportText(bottles, longest) == "" {
+		return ""
+	}
+	totalSec := int64((longest + time.Second - 1) / time.Second)
+	return fmt.Sprintf("[Drink] %d bottle(s) · %02dm%02ds left", bottles, totalSec/60, totalSec%60)
 }

@@ -39,6 +39,9 @@ func (s *Server) maybePushDrinkReport(sess *Session, now time.Time) bool {
 			longest = d
 		}
 	}
+	if s.langEN() {
+		return sess.emitDrinkReport(drinkReportTextEN(len(statuses), longest), now)
+	}
 	return sess.emitDrinkReport(drinkReportText(len(statuses), longest), now)
 }
 
