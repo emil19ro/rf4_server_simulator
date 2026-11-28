@@ -93,11 +93,16 @@ func (s *Server) handleBaitRuleSave(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 500, err.Error())
 		return
 	}
-	_ = s.db.AuditLogWrite(ctx, adminOf(r), "bait_rule_save", fishZh,
+	aw := adminWrite{admin: adminOf(r)}
+	aw.markBusinessApplied()
+	aw.audit("bait_rule_save", fishZh,
 		"allow="+strconv.Itoa(len(ov.Allow))+" deny="+strconv.Itoa(len(ov.Deny))+
 			" groups="+strconv.Itoa(len(groups))+" interval="+strconv.FormatInt(ov.RotateSec, 10)+
 			" mode="+mode+" enabled="+strconv.FormatBool(ov.Enabled))
-	_ = s.db.QueuePush(ctx, mustJSON(map[string]any{"op": "reload_bait_rules"}))
+	aw.push(mustJSON(map[string]any{"op": "reload_bait_rules"}))
+	if !s.commitAdmin(ctx, w, aw) {
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true})
 }
 
@@ -132,9 +137,14 @@ func (s *Server) handleBaitRuleReset(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 500, err.Error())
 		return
 	}
-	_ = s.db.AuditLogWrite(ctx, adminOf(r), "bait_rule_reset", target,
+	aw := adminWrite{admin: adminOf(r)}
+	aw.markBusinessApplied()
+	aw.audit("bait_rule_reset", target,
 		"rows="+strconv.FormatInt(n, 10))
-	_ = s.db.QueuePush(ctx, mustJSON(map[string]any{"op": "reload_bait_rules"}))
+	aw.push(mustJSON(map[string]any{"op": "reload_bait_rules"}))
+	if !s.commitAdmin(ctx, w, aw) {
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true, "removed": n})
 }
 

@@ -1040,6 +1040,15 @@ func (d *DB) QueuePush(ctx context.Context, payload string) error {
 	return err
 }
 
+// QueuePushTx 在调用方事务里投递管理指令。管理后台把审计行与指令放进同一事务
+// 提交：任一写入失败都整笔回滚，避免接口已回成功而指令未入队。
+func (d *DB) QueuePushTx(ctx context.Context, tx *sql.Tx, payload string) error {
+	_, err := tx.ExecContext(ctx,
+		`INSERT INTO admin_queue(payload, created_ts) VALUES(?,?)`,
+		payload, float64(time.Now().Unix()))
+	return err
+}
+
 // QueuePop 取最旧一条指令并删除（gameserver 轮询消费）；空队列返回 ok=false。
 func (d *DB) QueuePop(ctx context.Context) (string, bool, error) {
 	tx, err := d.SQL.BeginTx(ctx, nil)

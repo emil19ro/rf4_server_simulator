@@ -17,9 +17,10 @@ type releaseReceipt struct {
 
 // releaseCatchOnce 放生奖励与消费 pending 同事务，重启后的重试不重复入账。
 // rigType 是放生时所用钓组类型（11 级礼物按钓法分套的依据）。
+// grade 是这尾鱼的档位，只用于累计「已放生稀有鱼」计数（成就 911）。
 // 第二返回值是本次直发的升级礼物行（仅非重放；重放回执返回 nil），
 // 供调用方推 4/22——807 无奖励列表字段，礼物只在背包同步中体现。
-func (s *Server) releaseCatchOnce(ctx context.Context, uid int64, fishGUID string, bonus, rigType int64) (releaseReceipt, []*store.Item, bool, error) {
+func (s *Server) releaseCatchOnce(ctx context.Context, uid int64, fishGUID string, bonus, rigType, grade int64) (releaseReceipt, []*store.Item, bool, error) {
 	var result releaseReceipt
 	var gifts []*store.Item
 	if fishGUID == "" {
@@ -82,6 +83,14 @@ func (s *Server) releaseCatchOnce(ctx context.Context, uid int64, fishGUID strin
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO kv(k,v) VALUES(?,?)`, key, string(encoded)); err != nil {
 		return result, nil, false, err
+	}
+	// 成就 911 的计数源：放生不改 catch_log.source（只有入护才把同一行抬成
+	// 'keep'），「已放生」只能在这里记。同一 fishGUID 的重放走上面的回执提前
+	// 返回，不会重复累加。
+	if grade >= recordTrophyGrade {
+		if err := store.BumpPlayerCounter(ctx, tx, uid, rareReleasedCounterKey); err != nil {
+			return result, nil, false, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return result, nil, false, err

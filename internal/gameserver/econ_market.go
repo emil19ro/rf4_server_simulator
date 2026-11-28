@@ -528,15 +528,16 @@ func hMarketSellOffer(ctx *Ctx) ([]byte, bool) { return hCafeSubmit(ctx) }
 // 工坊 21/x
 // ---------------------------------------------------------------------------
 
-// 修理费用的基础值（银币分和金币）。
+// 修理费用的基础值（银币分和金币）。整件修理按可修零件数计价：典型渔轮
+// 本体加轮内 6 件共 7 件，半磨损整机价与旧版单槽位报价基本持平，零件越多越贵。
 const (
-	repairBaseCents    = 200
-	repairPerSlotCents = 100
+	repairBaseCents    = 120
+	repairPerSlotCents = 30
 	repairGoldBase     = 1
 )
 
-// 修理倍率资产。shop_repair_defs.json 只保存修理店索引；
-// 未知店铺使用当前地图倍率，未知地图回退到 1.0。
+// 修理倍率资产。shop_repair_defs.json 只保存修理店索引与品牌列；
+// 店铺只在其所属地图就是玩家当前地图时生效，未知地图回退到 1.0。
 type repairMapMultiplierRecord struct {
 	Repair       float64 `json:"repair"`
 	RepairBeluga float64 `json:"repair_beluga"`
@@ -608,24 +609,23 @@ func repairMultForMap(mapKey string, brands []string) float64 {
 	return 1.0
 }
 
-// repairMultiplierForStore 通过店铺索引解析地图和品牌；店铺未知时使用当前地图。
-func repairMultiplierForStore(storeID, fallbackMapKey string) float64 {
+// repairMultiplierForLocation 返回玩家当前地图的修理倍率。店铺只在其所属地图就是
+// 玩家当前地图时才提供品牌列；跨图或未知店铺一律按当前地图通用值，
+// 请求里的店铺名无法改写价格。
+func repairMultiplierForLocation(storeID, levelKey string) float64 {
 	repairMultiplierOnce.Do(loadRepairMultipliers)
-	mapKey := fallbackMapKey
+	levelKey = travelLevelKey(levelKey)
 	var brands []string
-	if def, ok := repairStoreDefs[strings.TrimSpace(storeID)]; ok {
-		if def.MapKey != "" {
-			mapKey = def.MapKey
-		}
+	if def, ok := repairStoreDefs[strings.TrimSpace(storeID)]; ok && def.MapKey == levelKey {
 		brands = def.Brands
 	}
-	return repairMultForMap(mapKey, brands)
+	return repairMultForMap(levelKey, brands)
 }
 
-// repairCost 根据槽位数、磨损和地图倍率计算修理费用，磨损因子下限为 25%。
+// repairCost 根据可修零件数、磨损和地图倍率计算修理费用，磨损因子下限为 25%。
 // 全新物品由调用方直接放行，不进入此计算。
-func repairCost(slots int, useGold bool, wear, mapMult float64) int64 {
-	n := slots
+func repairCost(parts int, useGold bool, wear, mapMult float64) int64 {
+	n := parts
 	if n < 1 {
 		n = 1
 	}
@@ -1513,6 +1513,9 @@ func workshopOrder(ctx *Ctx, preview bool) ([]byte, bool) {
 		// 内部零件都满、只有本体掉耐久：只收本体这一格的钱。
 		silver += workshopPartRepairPrice(row.Durability)
 		gold = 0
+	} else if wholeItemRepair && !isReel {
+		// 竿等整件没有零件聚合：整件修理会把本体耐久一并补满，本体磨损必须计价。
+		silver += workshopPartRepairPrice(row.Durability)
 	}
 	costSilver, costGold := silver, gold
 	if !preview && !useGold && wholeItemRepair && costSilver == 0 {
@@ -1671,8 +1674,9 @@ func workshopOrder(ctx *Ctx, preview bool) ([]byte, bool) {
 }
 
 // hWorkshopRepair 构造 21/3 银币修理或 21/4 金币修理处理器。
-// 服务端价格是结算依据；客户端报价只做容差校验。成功后耐久恢复为 1.0，
-// 并返回重建后的物品树。
+// 整件修理按物品树里的可修零件数与玩家当前地图倍率计价，服务端价格是唯一
+// 结算依据，客户端报价只作诊断。成功后耐久恢复为 1.0，渔轮内部零件一并
+// 恢复（计费已覆盖全部零件），并返回重建后的物品树。
 func hWorkshopRepair(useGold bool) Handler {
 	return func(ctx *Ctx) ([]byte, bool) {
 		srv := ctx.Sess.Srv
@@ -1703,12 +1707,19 @@ func hWorkshopRepair(useGold bool) Handler {
 			return body, true
 		}
 		wear := 1.0 - row.Durability
-		mapMult := repairMultiplierForStore(storeID, srv.currentLevel(ctx.Sess.Userid))
-		cost := repairCost(len(slots), useGold, wear, mapMult)
+		// 计费只认服务端事实：零件数取自物品树的可修零件，倍率取自玩家当前地图。
+		// 请求里的槽位和店铺名只用于诊断，不参与定价。
+		partCount := len(srv.repairPartsOf(cctx, row))
+		if partCount < 1 {
+			partCount = 1
+		}
+		levelKey := srv.currentLevel(ctx.Sess.Userid)
+		mapMult := repairMultiplierForLocation(storeID, levelKey)
+		cost := repairCost(partCount, useGold, wear, mapMult)
 		if clientCost > 0 && !workshopQuoteMatches(clientCost, cost) {
-			ctx.Log.Warn("修理：客户端报价异常", "guid", shortGUID(guid),
-				"client", clientCost, "server", cost, "gold", useGold)
-			return nil, false
+			// 客户端报价只作诊断：实际扣费始终是上面的服务端价格。
+			ctx.Log.Info("修理：客户端报价与服务端不一致，按服务端价格结算",
+				"guid", shortGUID(guid), "client", clientCost, "server", cost, "gold", useGold)
 		}
 		p, perr := srv.DB.EnsureProfile(cctx, ctx.Sess.Userid)
 		if perr != nil {
@@ -1741,6 +1752,8 @@ func hWorkshopRepair(useGold bool) Handler {
 		snapshot := *row
 		snapshot.Durability = 1.0
 		var preparedPerf *store.ReelPerformance
+		// 整件修理覆盖全部可修零件，渔轮内部零件随本体一并恢复；计费零件数
+		// 已包含这些零件，不存在按单件价格修满整机的路径。
 		if def, derr := srv.itemDefForRow(cctx, row); derr == nil && def != nil && def.Category == gearCatReel {
 			fields, ferr := FieldsFromJSON(row.FieldsJSON)
 			if ferr != nil {
@@ -1813,7 +1826,8 @@ func hWorkshopRepair(useGold bool) Handler {
 		if err := srv.DB.AddItemDamageLog(cctx, store.ItemDamageLog{
 			UID: ctx.Sess.Userid, ItemGUID: guid, ItemID: row.ItemID, Event: damageEventRepair,
 			BeforeDurability: ptrFloat64(beforeDurability), AfterDurability: ptrFloat64(1.0),
-			DetailJSON: damageDetailJSON(map[string]any{"store": storeID, "cost": cost, "gold": useGold}),
+			DetailJSON: damageDetailJSON(map[string]any{"store": storeID, "cost": cost, "gold": useGold,
+				"parts": partCount, "client_quote": clientCost}),
 		}); err != nil {
 			ctx.Log.Warn("修理历史写库失败", "guid", shortGUID(guid), "err", err)
 		}
@@ -1825,16 +1839,17 @@ func hWorkshopRepair(useGold bool) Handler {
 		if berr != nil {
 			return nil, false
 		}
-		ctx.Log.Info("修理完成", "guid", shortGUID(guid), "槽位数", len(slots),
-			"费用", cost, "金", useGold, "磨损前", 1.0-wear,
-			"店铺", storeID, "倍率", mapMult)
+		ctx.Log.Info("修理完成", "guid", shortGUID(guid), "零件数", partCount,
+			"客户端槽位数", len(slots), "费用", cost, "金", useGold, "磨损前", 1.0-wear,
+			"店铺", storeID, "地图", levelKey, "倍率", mapMult)
 		return body, true
 	}
 }
 
 // parseRepairRequest 解析 21/3、21/4 请求。
 // 标准形状为 [str 物品GUID, obj(17510){GUID16, VAL 槽位, OPT 金币, U64 价格}]，
-// 同时接受 [store, Guid 物品, 槽位...] 扁平形状。storeID 只用于估算修理费。
+// 同时接受 [store, Guid 物品, 槽位...] 扁平形状。storeID 与槽位只用于诊断日志，
+// 修理费由服务端按物品树和玩家地图计算。
 func parseRepairRequest(tree *proto.Value) (storeID, guid string, slots []int64, price int64) {
 	strs := treeStrs(tree)
 	if len(strs) > 0 {

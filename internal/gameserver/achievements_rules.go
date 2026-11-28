@@ -19,7 +19,7 @@ import (
 //
 // 条件来源：internal/gameserver/assets/achievement_texts.json，由客户端
 // 4.0.25034 成就列表面板还原的 130 条标题/描述（截图第 N 条对应
-// achievement_def 按 id 升序第 N 个 id）。目前实装 89 条，其余 41 条
+// achievement_def 按 id 升序第 N 个 id）。目前规则表实装 99 条，其余 31 条
 // 依赖服务端尚未实现的功能，在文件末尾按分组留空注释。
 
 type achievementEventKind uint8
@@ -45,6 +45,8 @@ type achievementEvent struct {
 	BaitKey       string  // 本次挖到的饵 item_id
 	CookPoints    float64 // 烹饪熟练度（skill.skill_id=6，0..100）
 	Grade         int64   // 放流鱼档位（1..4，4=蓝冠=超级稀有）
+	Streak        int64   // 连续上鱼数（player_counters.catch_streak，中断即归零）
+	RareReleased  int64   // 累计已放生的稀有鱼条数（player_counters）
 }
 
 type achievementRule struct {
@@ -230,11 +232,18 @@ var achievementRules = []achievementRule{
 
 	// ---- 900-912 里程碑 / 诱饵广度 / 放流 ----
 	{ID: 900, Event: evFishLanded, Check: func(achievementEvent) bool { return true }},
+	// 904 熟能生巧：连续五条鱼无中断（Streak 来自 player_counters.catch_streak）。
+	{ID: 904, Event: evFishLanded, Check: func(ev achievementEvent) bool { return ev.Streak >= 5 }},
 	{ID: 905, Event: evFishLanded, Check: fishHeavierThan(50_000)}, // 体重超过 50 公斤
 	{ID: 906, Event: evFishKept, Check: distinctBaitsAtLeast(20)},  // 20 种不同诱饵
 	{ID: 907, Event: evFishKept, Check: distinctBaitsAtLeast(50)},  // 50 种
 	{ID: 908, Event: evFishKept, Check: distinctBaitsAtLeast(10)},  // 10 种鱼饵
 	{ID: 909, Event: evFishKept, Check: distinctBaitsAtLeast(30)},  // 30 种
+	// 911 大放水! 快逃吧!：累计释放 10 条稀有鱼。稀有沿用全仓口径
+	// grade>=recordTrophyGrade（上星及以上），与 912 的「超级稀有 = 蓝冠」不同。
+	{ID: 911, Event: evFishReleased, Check: func(ev achievementEvent) bool {
+		return ev.RareReleased >= 10
+	}},
 	// 912 如果爱我就放我走：释放超级稀有鱼。蓝冠（grade 4，
 	// econ_market.go:superTrophyGrade）就是超级稀有，与物种稀有度无关。
 	{ID: 912, Event: evFishReleased, Check: func(ev achievementEvent) bool {
@@ -257,6 +266,23 @@ func (s *Server) distinctCatchBaits(ctx context.Context, uid int64) int64 {
 	_ = s.DB.SQL.QueryRowContext(ctx,
 		`SELECT COUNT(DISTINCT bait) FROM catch_log WHERE uid=? AND bait<>''`, uid).Scan(&n)
 	return n
+}
+
+// rareReleasedCounterKey 是 player_counters 里「已放生稀有鱼」的键，由
+// releaseCatchOnce 在放生事务内累加。
+const rareReleasedCounterKey = "rare_released"
+
+// rareReleasedCount 读 911 的累计计数。放生不改 catch_log.source（只有入护才把
+// 同一行抬成 'keep'），所以「已放生」不能按 source 统计，只能读放生路径自己记
+// 下的计数器。
+func (s *Server) rareReleasedCount(ctx context.Context, uid int64) (int64, error) {
+	var n int64
+	if err := s.DB.SQL.QueryRowContext(ctx,
+		`SELECT COALESCE(value,0) FROM player_counters WHERE uid=? AND key=?`,
+		uid, rareReleasedCounterKey).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // evaluateAchievements 是唯一的判定入口，由玩法事件在发生后调用一次。
@@ -297,13 +323,13 @@ func (s *Server) evaluateAchievements(ctx *Ctx, ev achievementEvent) {
 }
 
 // ============================================================================
-// 留空成就（33 条）= achievement_def 的 130 个 id − 规则表的 97 条。
+// 留空成就（31 条）= achievement_def 的 130 个 id − 规则表的 99 条。
 // 完整清单与 achievements_registry_test.go 的 unimplementedAchievementIDs 一致：
 //
 //   102, 104, 106, 108, 156, 157, 204, 209, 210,
 //   300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311,
 //   409, 411, 412, 413, 414, 415, 416,
-//   901, 902, 903, 904, 911
+//   901, 902, 903
 //
 // 待对应功能落地后，按「绑定事件 + 一个布尔判断」在规则表各补一行即可。
 // 依赖的缺失能力按组说明：
@@ -334,15 +360,9 @@ func (s *Server) evaluateAchievements(ctx *Ctx, ev achievementEvent) {
 // 901/902/903 每种浮子/纺车/沉底钓组各钓一条：需要「已用钓组集合」持久化，
 //   player_achievements 无集合列。
 //
-// 904 连续五条鱼无中断：全项目无 streak/连续计数（player_counters 只有
-//   escapes/line_breaks/rod_breaks）。
+// 912 单次放流已实装。
 //
-// 911 累计释放 10 条稀有鱼：此前放流无持久化（catch_log 只记 source='keep'）。
-//   现在 catch_log 在结算落 source='catch'、入护才抬成 'keep'，放生的稀有鱼
-//   可按「grade>=3 且 source='catch'」计数，911 具备实现条件（本批不实装）。
-//   912 单次放流已实装。
-//
-// ---- 以下已实装，不属于上面 33 条，仅记录近似判定的已知差距 ----
+// ---- 以下已实装，不属于上面 31 条，仅记录近似判定的已知差距 ----
 // 151/153/154/162 用拟饵 item_id 前缀判断（crank/plug/spoon/spinner/
 //   topwater/popper/jerkbait，以及自制米诺 hm_minnow_*/hm_j_minnow_*）。
 //   静态库无 minnow* 前缀，原规则的 "minnow" 是死分支，已换成真实前缀。

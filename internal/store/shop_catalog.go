@@ -120,6 +120,10 @@ const (
 	shopShelfSourceMissing  = "missing_evidence"
 	shopShelfSourceUnknown  = "unknown_store"
 	shopShelfSourceHouse    = "house_store"
+
+	// shopShelfRestockStock 是货架库存的展示补满值。货架库存只是下发给客户端的
+	// 展示量：本地商店持续供货，成交只校验价格，购买既不读取也不扣减它。
+	shopShelfRestockStock int64 = 1000
 )
 
 type shopShelfResolution struct {
@@ -408,9 +412,9 @@ func applyShopOverrides(base []*ShopPrice, overrides map[string]shopOverrideValu
 				v.Stock = override.Stock.Int64
 			}
 		}
-		// 本地商店持续供货，零库存自动补回基础批量。
+		// 本地商店持续供货：零库存只做展示补满，不写库，也不随购买减少。
 		if v.Stock <= 0 {
-			v.Stock = 1000
+			v.Stock = shopShelfRestockStock
 		}
 		out = append(out, &v)
 	}

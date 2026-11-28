@@ -534,7 +534,8 @@ func (s *Server) acceptMails(ctx *Ctx, ids []int64) (int, []*store.Item, error) 
 				ctx.Log.Warn("19/3 附件 JSON 损坏", "mail", id, "err", err)
 				skipped = append(skipped, fmt.Errorf("邮件 %d 附件数据损坏: %w", id, err))
 				plan.invalid = true
-				break
+				// 只跳过这一封，后面的邮件照常发放。
+				continue
 			}
 			for _, att := range attachments {
 				if m.AttachmentSnapshotVersion > 0 && !att.HasItemSnapshot() {

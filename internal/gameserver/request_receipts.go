@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"log/slog"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"time"
@@ -14,6 +16,7 @@ import (
 
 const (
 	nativeFailureReceipt     = "native-failure-envelope"
+	panicFailureReceipt      = "handler-panic"
 	requestReceiptWait       = 30 * time.Second
 	requestReceiptPoll       = 10 * time.Millisecond
 	requestReceiptStaleAfter = 2 * time.Minute
@@ -84,7 +87,7 @@ func failedRequestResult(reason string) requestExecutionResult {
 
 // executeRequest 执行 handler 和兜底链，但不直接发送响应。
 // interceptReplies=true 时缓存 Ctx.Reply 的响应，确保回执落库后再发送。
-func (d *Dispatch) executeRequest(ctx *Ctx, interceptReplies bool) requestExecutionResult {
+func (d *Dispatch) executeRequest(ctx *Ctx, interceptReplies bool) (result requestExecutionResult) {
 	var (
 		capture *ctxReplyCapture
 	)
@@ -93,6 +96,18 @@ func (d *Dispatch) executeRequest(ctx *Ctx, interceptReplies bool) requestExecut
 		ctx.replyCapture = capture
 		defer func() { ctx.replyCapture = nil }()
 	}
+	// handler 里的 panic 只结束本次请求：转成可重放的失败响应交给回执表落定，
+	// 不能让一条请求带走整个进程。
+	defer func() {
+		if r := recover(); r != nil {
+			var log *slog.Logger
+			if ctx != nil {
+				log = ctx.Log
+			}
+			requestPanicLog(log, r)
+			result = panicFailureResult(ctx)
+		}
+	}()
 
 	if !ctx.ExpectResponse {
 		// fire-and-forget：绝不回包；fallback 也不执行。
@@ -281,7 +296,7 @@ func (s *Server) replayRequestReceipt(ctx *Ctx, rec *store.RequestReceipt) {
 		return
 	}
 	result := requestExecutionResult{body: rec.ResponseBody, hasResponse: true,
-		nativeFailure: rec.ErrorText == nativeFailureReceipt}
+		nativeFailure: rec.ErrorText == nativeFailureReceipt || rec.ErrorText == panicFailureReceipt}
 	if traceCmds {
 		ctx.Log.Info("TRACE 回(回执重放)", "cmd", ctx.Key(), "len", len(result.body),
 			"hex", traceHexHead(result.body, 160))
@@ -301,4 +316,26 @@ func (s *Server) sendRequestResult(ctx *Ctx, result requestExecutionResult) {
 	for _, fn := range ctx.afterResponse {
 		fn()
 	}
+}
+
+// requestPanicLog 记录请求路径上的 panic：cmd 与 call_id 由 ctx.Log 携带，
+// 这里补上栈，否则线上只能看到进程消失，无法定位是哪个 handler 崩的。
+func requestPanicLog(log *slog.Logger, r any) {
+	if log == nil {
+		return
+	}
+	log.Error("请求处理 panic，已隔离", "panic", r, "stack", string(debug.Stack()))
+}
+
+// panicFailureResult 把 handler panic 转成可重放的失败结果。
+// 与 handler 内 Ctx.ReplyFailure 同构：期望响应时回 -3 信封并落定回执，
+// 重试直接重放该信封，不重复执行半途中断的副作用。
+func panicFailureResult(ctx *Ctx) requestExecutionResult {
+	result := requestExecutionResult{errorText: panicFailureReceipt}
+	if ctx != nil && ctx.ExpectResponse {
+		result.body = proto.BuildFailureEnvelope(ctx.CallID, "System.InvalidOperationException", "请求处理内部错误，请重试")
+		result.hasResponse = true
+		result.nativeFailure = true
+	}
+	return result
 }

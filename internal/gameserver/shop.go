@@ -38,6 +38,7 @@ func hStoreList(ctx *Ctx) ([]byte, bool) {
 	}
 	// 房产货架行必须保留：实测缺失时客户端点击房屋直接转圈（房屋 UI 的
 	// 必要数据源），所有权改由档案 f20/f22 携带（见 profilebuild.go）。
+	// f3 是货架展示余量：本地商店持续供货，购买只校验价格并扣款，不扣减该值。
 	for _, p := range items {
 		out.Items = append(out.Items, wiregen.MustMakeObj("ifdefblccde", map[int]*proto.Value{
 			0: proto.StrVal(p.ItemID),
@@ -53,7 +54,7 @@ func hStoreList(ctx *Ctx) ([]byte, bool) {
 	return body, true
 }
 
-// storePrice 只接受该店生效货架上的价格，避免使用全局价格绕过店内库存。
+// storePrice 只接受该店生效货架上的价格，避免用全局价目买到不在本店货架上的商品。
 func (s *Server) storePrice(ctx context.Context, storeID, itemID string, clientOffer uint64, goldCol bool) (uint64, error) {
 	_ = clientOffer // 客户端报价只用于诊断，绝不作为服务端成交价。
 	pick := func(p *store.ShopPrice) (uint64, error) {

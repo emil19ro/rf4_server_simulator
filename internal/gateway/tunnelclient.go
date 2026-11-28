@@ -13,19 +13,57 @@ import (
 	"rf4server/internal/tunnel"
 )
 
-// 隧道指标。
 var (
-	tlUp        prometheus.Gauge
-	tlSent      *prometheus.CounterVec
-	tlRecv      *prometheus.CounterVec
-	tlDialTotal prometheus.Counter
+	// tunnelRegMu 保护 tunnelRegs。同一份注册表上只能成功注册一次同名指标：
+	// 重复注册会 panic，而每个实例各造一套采集器又会让指标从 /metrics 上消失。
+	// 这里按注册表缓存句柄，重复构造就复用同一份采集器。
+	tunnelRegMu sync.Mutex
+	tunnelRegs  = make(map[*prometheus.Registry]tunnelMetrics)
+
+	// tunnelFallbackReg 是观测端口未启用时的注册表。此时没有 /metrics 可抓，
+	// 但句柄仍要能安全读写；固定共用一份，避免每次构造都新建注册表。
+	tunnelFallbackReg = prometheus.NewRegistry()
 )
 
-func initTunnelMetrics(reg *prometheus.Registry) {
-	tlUp = metrics.NewGauge(reg, "gateway_tunnel_up", "隧道是否在线（1/0）")
-	tlSent = metrics.NewLabeledCounter(reg, "gateway_tunnel_sent_total", "隧道发送记录数", "type")
-	tlRecv = metrics.NewLabeledCounter(reg, "gateway_tunnel_recv_total", "隧道接收记录数", "type")
-	tlDialTotal = metrics.NewCounter(reg, "gateway_tunnel_dials_total", "隧道拨号次数")
+// tunnelRegistryOf 返回隧道指标要注册进的注册表。
+func tunnelRegistryOf(obs *metrics.Server) *prometheus.Registry {
+	if obs != nil {
+		return obs.Registry()
+	}
+	return tunnelFallbackReg
+}
+
+// tunnelMetrics 是隧道指标句柄。
+//
+// 句柄由 TunnelManager 实例持有，不再用包级变量：包级变量只能靠「构造时给全局
+// 变量重新赋值」来初始化，多实例并发构造时与读侧（读循环、send）构成数据竞争，
+// 而且后构造的实例会把先构造实例的句柄换掉。
+type tunnelMetrics struct {
+	up        prometheus.Gauge
+	sent      *prometheus.CounterVec
+	recv      *prometheus.CounterVec
+	dialTotal prometheus.Counter
+}
+
+// tunnelMetricsFor 注册并返回 reg 上的隧道指标句柄；同一注册表重复调用返回同一份。
+//
+// 采集器按注册表缓存，而不是每次新建：新建一套采集器再注册，同名指标会 panic；
+// 直接跳过注册又会把 /metrics 上的指标弄丢。
+func tunnelMetricsFor(reg *prometheus.Registry) tunnelMetrics {
+	tunnelRegMu.Lock()
+	defer tunnelRegMu.Unlock()
+	if tl, ok := tunnelRegs[reg]; ok {
+		return tl
+	}
+	tl := tunnelMetrics{
+		up:        prometheus.NewGauge(prometheus.GaugeOpts{Name: "gateway_tunnel_up", Help: "隧道是否在线（1/0）"}),
+		sent:      prometheus.NewCounterVec(prometheus.CounterOpts{Name: "gateway_tunnel_sent_total", Help: "隧道发送记录数"}, []string{"type"}),
+		recv:      prometheus.NewCounterVec(prometheus.CounterOpts{Name: "gateway_tunnel_recv_total", Help: "隧道接收记录数"}, []string{"type"}),
+		dialTotal: prometheus.NewCounter(prometheus.CounterOpts{Name: "gateway_tunnel_dials_total", Help: "隧道拨号次数"}),
+	}
+	reg.MustRegister(tl.up, tl.sent, tl.recv, tl.dialTotal)
+	tunnelRegs[reg] = tl
+	return tl
 }
 
 // TunnelManager 网关侧隧道客户端：维持到 gameserver 的连接，收发会话记录。
@@ -51,6 +89,11 @@ type TunnelManager struct {
 	// m.conn 清成 nil 再关连接，此时读循环看到 nil 既可能是「没有新连接」，
 	// 也可能是「新连接刚被别处换走」，两种情形处理方式相反。
 	gen uint64
+
+	// tl 是本实例持有的隧道指标句柄：构造时确定，之后只由本实例的拨号路径、
+	// 读循环与 send 访问。同一观测注册表下多个实例共用同一份句柄，句柄本身
+	// 并发安全；实例之间不再互相覆盖。
+	tl tunnelMetrics
 }
 
 // errTunnelClosed 表示隧道管理器已关闭，不再拨号。
@@ -58,9 +101,9 @@ var errTunnelClosed = errors.New("隧道已关闭")
 
 // NewTunnelManager 构建隧道管理器（不拨号；首次 sendOpen 时懒拨）。
 func NewTunnelManager(addr, psk string, log *slog.Logger, obs *metrics.Server, onState func(up bool)) *TunnelManager {
-	initTunnelMetrics(obsRegistry(obs))
-	tlUp.Set(0)
-	return &TunnelManager{addr: addr, psk: psk, log: log, onState: onState}
+	tl := tunnelMetricsFor(tunnelRegistryOf(obs))
+	tl.up.Set(0)
+	return &TunnelManager{addr: addr, psk: psk, log: log, onState: onState, tl: tl}
 }
 
 // SetGateway 绑定 realtime 服务（收下行记录时派发）。
@@ -145,8 +188,8 @@ func (m *TunnelManager) getConn() (*tunnel.Conn, error) {
 	m.conn = c
 	m.gen++
 	gen := m.gen
-	tlUp.Set(1)
-	tlDialTotal.Inc()
+	m.tl.up.Set(1)
+	m.tl.dialTotal.Inc()
 	m.log.Info("隧道已连接", "addr", m.addr, "remote", c.RemoteAddr())
 	state := m.onState
 	m.mu.Unlock()
@@ -187,7 +230,7 @@ func (m *TunnelManager) readLoop(c *tunnel.Conn, gen uint64) {
 		if superseded {
 			return
 		}
-		tlUp.Set(0)
+		m.tl.up.Set(0)
 		if m.onState != nil {
 			m.onState(false)
 		}
@@ -201,7 +244,7 @@ func (m *TunnelManager) readLoop(c *tunnel.Conn, gen uint64) {
 		if err != nil {
 			return
 		}
-		tlRecv.WithLabelValues(rt.String()).Inc()
+		m.tl.recv.WithLabelValues(rt.String()).Inc()
 		switch rt {
 		case tunnel.TypeData:
 			if m.gw == nil {
@@ -259,7 +302,7 @@ func (m *TunnelManager) send(rt tunnel.RecordType, sid uint64, payload []byte) e
 		m.mu.Unlock()
 		return err
 	}
-	tlSent.WithLabelValues(rt.String()).Inc()
+	m.tl.sent.WithLabelValues(rt.String()).Inc()
 	return nil
 }
 

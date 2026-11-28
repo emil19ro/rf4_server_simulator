@@ -79,10 +79,15 @@ func (s *Server) handleFishZoneSave(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 400, err.Error())
 		return
 	}
-	_ = s.db.AuditLogWrite(ctx, adminOf(r), "fish_zone_save", z.Loc,
+	aw := adminWrite{admin: adminOf(r)}
+	aw.markBusinessApplied()
+	aw.audit("fish_zone_save", z.Loc,
 		"zone="+strconv.FormatInt(z.ID, 10)+" kind="+z.Kind+" mode="+z.Mode+
 			" fish="+strconv.Itoa(len(z.Fish))+" enabled="+strconv.FormatBool(z.Enabled))
-	_ = s.db.QueuePush(ctx, mustJSON(map[string]any{"op": "reload_fish_zones"}))
+	aw.push(mustJSON(map[string]any{"op": "reload_fish_zones"}))
+	if !s.commitAdmin(ctx, w, aw) {
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true, "id": z.ID})
 }
 
@@ -105,7 +110,12 @@ func (s *Server) handleFishZoneDelete(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 500, err.Error())
 		return
 	}
-	_ = s.db.AuditLogWrite(ctx, adminOf(r), "fish_zone_delete", strconv.FormatInt(req.ID, 10), "")
-	_ = s.db.QueuePush(ctx, mustJSON(map[string]any{"op": "reload_fish_zones"}))
+	aw := adminWrite{admin: adminOf(r)}
+	aw.markBusinessApplied()
+	aw.audit("fish_zone_delete", strconv.FormatInt(req.ID, 10), "")
+	aw.push(mustJSON(map[string]any{"op": "reload_fish_zones"}))
+	if !s.commitAdmin(ctx, w, aw) {
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true})
 }

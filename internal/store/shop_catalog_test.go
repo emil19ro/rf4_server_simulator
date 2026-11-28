@@ -600,3 +600,46 @@ func TestShopCatalogFillsSilverForSupplementedFishingItems(t *testing.T) {
 		t.Fatalf("运行时补出的商品缺银价时未从别店实录补上: %+v", p)
 	}
 }
+
+// 货架库存（22/1 的 f3）是展示量，不是可消耗的存货：解析层只把 0 补满到展示值，
+// 既不写库、也不随购买减少，因此项目里没有“限量商品”。
+func TestShopShelfStockIsDisplayOnly(t *testing.T) {
+	db := openShopCatalogTestDB(t)
+	ctx := context.Background()
+	if _, err := db.SQL.Exec(`INSERT INTO item_def(numeric_id,item_id,category,kind,brand,attrs_json) VALUES
+ (991201,'sold_out_line',11,'line','brand_test','{}'),(991202,'stock_one_line',11,'line','brand_test','{}');
+ INSERT INTO shop_item(store_id,item_id,silver,gold,stock) VALUES
+ ('fishingstore_009','sold_out_line',100,0,0),('fishingstore_009','stock_one_line',100,0,1);`); err != nil {
+		t.Fatal(err)
+	}
+
+	first, err := db.ShopItems(ctx, "fishingstore_009")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := findShopPrice(t, first, "sold_out_line"); p.Stock != shopShelfRestockStock {
+		t.Fatalf("零库存应补满为展示值 %d，实际 %d", shopShelfRestockStock, p.Stock)
+	}
+	if p := findShopPrice(t, first, "stock_one_line"); p.Stock != 1 {
+		t.Fatalf("实录库存 1 应原样展示 1，实际 %d", p.Stock)
+	}
+
+	// 重复解析必须得到同一结果：补满只发生在返回值上，不写回 shop_item 或覆盖表。
+	second, err := db.ShopItems(ctx, "fishingstore_009")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again := findShopPrice(t, second, "sold_out_line"); again.Stock != shopShelfRestockStock {
+		t.Fatalf("重复读取的库存展示值应稳定为 %d，实际 %d", shopShelfRestockStock, again.Stock)
+	}
+	var recorded, overrides int64
+	if err := db.SQL.QueryRow(`SELECT stock FROM shop_item WHERE store_id='fishingstore_009' AND item_id='sold_out_line'`).Scan(&recorded); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SQL.QueryRow(`SELECT COUNT(*) FROM shop_item_override WHERE store_id='fishingstore_009'`).Scan(&overrides); err != nil {
+		t.Fatal(err)
+	}
+	if recorded != 0 || overrides != 0 {
+		t.Fatalf("库存补满不得写库：实录库存=%d，覆盖行=%d，期望 0 和 0", recorded, overrides)
+	}
+}

@@ -3,6 +3,7 @@ package gateway_test
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,11 +17,13 @@ import (
 // 完成握手走到重连分支。
 type failingLoadStore struct {
 	gateway.Store
-	fail bool
+	// fail 会被测试 goroutine 置位、被 realtime 会话 goroutine 读取，
+	// 并发访问必须用原子变量。
+	fail atomic.Bool
 }
 
 func (s *failingLoadStore) LoadHandoff(ctx context.Context, token string) (*gateway.Handoff, error) {
-	if s.fail {
+	if s.fail.Load() {
 		return nil, errors.New("模拟数据库故障")
 	}
 	return s.Store.LoadHandoff(ctx, token)
@@ -112,7 +115,7 @@ func TestLoadHandoffErrorAbortsReconnect(t *testing.T) {
 	openedBefore, _, _ := stub.Stats()
 
 	// 从这里开始读承接状态报错：必须中止重连。
-	store.fail = true
+	store.fail.Store(true)
 	c2 := testutil.NewFakeClient(t, gw.RealAddr)
 	c2.Dial(token, true)
 	time.Sleep(500 * time.Millisecond)
@@ -123,7 +126,7 @@ func TestLoadHandoffErrorAbortsReconnect(t *testing.T) {
 			len(openedBefore), len(openedAfter))
 	}
 
-	store.fail = false
+	store.fail.Store(false)
 	if h, err := store.Store.LoadHandoff(context.Background(), token); err != nil || h == nil {
 		t.Fatalf("读库失败后承接状态必须保留，实际 err=%v h=%v", err, h)
 	}

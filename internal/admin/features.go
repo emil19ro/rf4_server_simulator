@@ -236,8 +236,13 @@ func (s *Server) handleStoreItemUpdate(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 400, err.Error())
 		return
 	}
-	_ = s.db.AuditLogWrite(r.Context(), adminOf(r), "shop_override", req.StoreID+"/"+req.ItemID,
+	aw := adminWrite{admin: adminOf(r)}
+	aw.markBusinessApplied()
+	aw.audit("shop_override", req.StoreID+"/"+req.ItemID,
 		fmt.Sprintf("silver=%d gold=%d stock=%d", req.Silver, req.Gold, req.Stock))
+	if !s.commitAdmin(r.Context(), w, aw) {
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true})
 }
 
@@ -254,7 +259,12 @@ func (s *Server) handleStoreItemReset(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 500, err.Error())
 		return
 	}
-	_ = s.db.AuditLogWrite(r.Context(), adminOf(r), "shop_override_reset", req.StoreID+"/"+req.ItemID, "")
+	aw := adminWrite{admin: adminOf(r)}
+	aw.markBusinessApplied()
+	aw.audit("shop_override_reset", req.StoreID+"/"+req.ItemID, "")
+	if !s.commitAdmin(r.Context(), w, aw) {
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true})
 }
 
@@ -433,11 +443,16 @@ func (s *Server) handleFishConfigSave(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 400, err.Error())
 		return
 	}
-	_ = s.db.AuditLogWrite(r.Context(), adminOf(r), "fish_config", req.Area,
+	aw := adminWrite{admin: adminOf(r)}
+	aw.markBusinessApplied()
+	aw.audit("fish_config", req.Area,
 		fmt.Sprintf("probability=%.3f fixed=%.2f scale=%.2f fish=%d",
 			req.Setting.BiteProbability, req.Setting.BiteDelayFixed,
 			req.Setting.BiteDelayScale, len(req.Fish)))
-	_ = s.db.QueuePush(r.Context(), mustJSON(map[string]any{"op": "reload_tunables"}))
+	aw.push(mustJSON(map[string]any{"op": "reload_tunables"}))
+	if !s.commitAdmin(r.Context(), w, aw) {
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true})
 }
 
@@ -453,8 +468,13 @@ func (s *Server) handleFishConfigReset(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 500, err.Error())
 		return
 	}
-	_ = s.db.AuditLogWrite(r.Context(), adminOf(r), "fish_config_reset", req.Area, "")
-	_ = s.db.QueuePush(r.Context(), mustJSON(map[string]any{"op": "reload_tunables"}))
+	aw := adminWrite{admin: adminOf(r)}
+	aw.markBusinessApplied()
+	aw.audit("fish_config_reset", req.Area, "")
+	aw.push(mustJSON(map[string]any{"op": "reload_tunables"}))
+	if !s.commitAdmin(r.Context(), w, aw) {
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true})
 }
 
@@ -503,11 +523,16 @@ func (s *Server) handlePlayerSkillUpdate(w http.ResponseWriter, r *http.Request)
 		httpError(w, 400, err.Error())
 		return
 	}
-	_ = s.db.QueuePush(r.Context(), mustJSON(map[string]any{
+	aw := adminWrite{admin: adminOf(r)}
+	aw.markBusinessApplied()
+	aw.push(mustJSON(map[string]any{
 		"op": "refresh_skills", "uid": req.UID,
 	}))
-	_ = s.db.AuditLogWrite(r.Context(), adminOf(r), "skill_proficiency",
+	aw.audit("skill_proficiency",
 		fmt.Sprintf("%d/%d", req.UID, req.SkillID), fmt.Sprintf("%.3f", req.Points))
+	if !s.commitAdmin(r.Context(), w, aw) {
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true})
 }
 
@@ -532,11 +557,16 @@ func (s *Server) handlePlayerSkillPoints(w http.ResponseWriter, r *http.Request)
 		httpError(w, 500, err.Error())
 		return
 	}
-	_ = s.db.QueuePush(r.Context(), mustJSON(map[string]any{
+	aw := adminWrite{admin: adminOf(r)}
+	aw.markBusinessApplied()
+	aw.push(mustJSON(map[string]any{
 		"op": "refresh_skills", "uid": req.UID,
 	}))
-	_ = s.db.AuditLogWrite(r.Context(), adminOf(r), "skill_points",
+	aw.audit("skill_points",
 		fmt.Sprintf("%d", req.UID), fmt.Sprintf("available=%d bonus=%d", req.Points, bonus))
+	if !s.commitAdmin(r.Context(), w, aw) {
+		return
+	}
 	_, _, _, avail := s.db.SkillPointsAvailable(r.Context(), req.UID)
 	writeJSON(w, map[string]any{"ok": true, "available_points": avail})
 }
@@ -550,11 +580,15 @@ func (s *Server) handlePlayerItemDelete(w http.ResponseWriter, r *http.Request) 
 		httpError(w, 400, "参数错误")
 		return
 	}
-	_ = s.db.QueuePush(r.Context(), mustJSON(map[string]any{
+	aw := adminWrite{admin: adminOf(r)}
+	aw.push(mustJSON(map[string]any{
 		"op": "delete_item", "uid": req.UID, "guids": req.GUIDs,
 	}))
-	_ = s.db.AuditLogWrite(r.Context(), adminOf(r), "item_delete",
+	aw.audit("item_delete",
 		strconv.FormatInt(req.UID, 10), strings.Join(req.GUIDs, ","))
+	if !s.commitAdmin(r.Context(), w, aw) {
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true, "queued": true})
 }
 
@@ -583,11 +617,15 @@ func (s *Server) handlePlayerMailDelete(w http.ResponseWriter, r *http.Request) 
 		httpError(w, 400, "参数错误")
 		return
 	}
-	_ = s.db.QueuePush(r.Context(), mustJSON(map[string]any{
+	aw := adminWrite{admin: adminOf(r)}
+	aw.push(mustJSON(map[string]any{
 		"op": "delete_mail", "uid": req.UID, "mail_ids": ids,
 	}))
-	_ = s.db.AuditLogWrite(r.Context(), adminOf(r), "mail_delete",
+	aw.audit("mail_delete",
 		strconv.FormatInt(req.UID, 10), strings.Join(ids, ","))
+	if !s.commitAdmin(r.Context(), w, aw) {
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true, "queued": true})
 }
 
@@ -615,11 +653,15 @@ func (s *Server) handlePlayerKeepnetAdd(w http.ResponseWriter, r *http.Request) 
 		LengthM: req.LengthM, Cat: req.Cat, KeepLoc: req.KeepLoc,
 		KeepSpot: req.KeepSpot, KeepBait: req.KeepBait, KeepLevel: req.KeepLevel,
 	}
-	_ = s.db.QueuePush(r.Context(), mustJSON(map[string]any{
+	aw := adminWrite{admin: adminOf(r)}
+	aw.push(mustJSON(map[string]any{
 		"op": "add_keepnet", "uid": req.UID, "keepnet": entry,
 	}))
-	_ = s.db.AuditLogWrite(r.Context(), adminOf(r), "keepnet_add",
+	aw.audit("keepnet_add",
 		strconv.FormatInt(req.UID, 10), fmt.Sprintf("%s %dg", req.Species, req.WeightG))
+	if !s.commitAdmin(r.Context(), w, aw) {
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true, "queued": true})
 }
 
@@ -632,11 +674,15 @@ func (s *Server) handlePlayerKeepnetDelete(w http.ResponseWriter, r *http.Reques
 		httpError(w, 400, "参数错误")
 		return
 	}
-	_ = s.db.QueuePush(r.Context(), mustJSON(map[string]any{
+	aw := adminWrite{admin: adminOf(r)}
+	aw.push(mustJSON(map[string]any{
 		"op": "delete_keepnet", "uid": req.UID, "keepnet_guids": req.GUIDs,
 	}))
-	_ = s.db.AuditLogWrite(r.Context(), adminOf(r), "keepnet_delete",
+	aw.audit("keepnet_delete",
 		strconv.FormatInt(req.UID, 10), strings.Join(req.GUIDs, ","))
+	if !s.commitAdmin(r.Context(), w, aw) {
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true, "queued": true})
 }
 
@@ -664,13 +710,14 @@ func (s *Server) handleMailSend(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 400, err.Error())
 		return
 	}
-	if err := s.db.QueuePush(r.Context(), mustJSON(map[string]any{
+	detail, _ := json.Marshal(req)
+	aw := adminWrite{admin: adminOf(r)}
+	aw.push(mustJSON(map[string]any{
 		"op": "send_mail", "uid": req.UID, "text": req.Text, "items": req.Items,
-	})); err != nil {
-		httpError(w, 500, "写入发送队列失败: "+err.Error())
+	}))
+	aw.audit("mail_send", strconv.FormatInt(req.UID, 10), string(detail))
+	if !s.commitAdmin(r.Context(), w, aw) {
 		return
 	}
-	detail, _ := json.Marshal(req)
-	_ = s.db.AuditLogWrite(r.Context(), adminOf(r), "mail_send", strconv.FormatInt(req.UID, 10), string(detail))
 	writeJSON(w, map[string]any{"ok": true, "queued": true})
 }

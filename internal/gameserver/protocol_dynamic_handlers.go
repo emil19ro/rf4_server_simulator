@@ -87,10 +87,12 @@ func hDynamicHanditemThrow(ctx *Ctx) ([]byte, bool) {
 	}
 	var upserts []*proto.Value
 	var removed []string
+	consumed := false
 	if dist > 0 && handGUID != "" && handGUID != zeroGUID {
 		got := srv.consumeHanditemLoadedForThrow(ctx.Sess.pushCtx(), handGUID)
 		upserts = got.upserts
 		removed = got.removed
+		consumed = got.consumed
 	}
 	// 窝料系统：这一弹的饵落到落点格子里（通道=catapult）。落点只有距离，
 	// 世界坐标取服务端已经存下的本次抛竿落点。
@@ -106,7 +108,7 @@ func hDynamicHanditemThrow(ctx *Ctx) ([]byte, bool) {
 			}
 		}
 	}
-	if dist > 0 && handGUID != "" && handGUID != zeroGUID && baitItemID != "" {
+	if consumed && baitItemID != "" {
 		if uid := ctx.Sess.Userid; uid != 0 {
 			st := srv.stateFor(uid)
 			if st != nil {
@@ -715,6 +717,9 @@ func sonarRollContext(srv *Server, sess *Session, key string, now time.Time) fis
 type handitemThrowConsume struct {
 	upserts []*proto.Value
 	removed []string
+	// consumed 表示这一发真的扣掉了一份已装填物。扣料没写进库时为 false，
+	// 调用方不能再记窝账，否则库存没减、窝却白得了。
+	consumed bool
 }
 
 // consumeHanditemLoadedForThrow 消耗一份手持工具中的已装填物：
@@ -738,9 +743,13 @@ func (s *Server) consumeHanditemLoadedForThrow(ctx context.Context, parentGUID s
 		return out
 	}
 	itemID, uid := row.ItemID, row.UID // 扣料前记下，供用尽后按同种饵补填
-	if s.consumeItemQty(ctx, row, 1) < 1 {
+	if _, cerr := s.consumeItemQtyErr(ctx, row, 1); cerr != nil {
+		// 扣料没写进库就不能当这一发已经扔出去了：既不加推送，也不自动补填。
+		s.log.Warn("手持工具扣料失败，本次抛投不生效", "parent", shortGUID(parentGUID),
+			"loaded", shortGUID(loaded), "err", cerr)
 		return out
 	}
+	out.consumed = true
 	left, err := s.DB.GetItemByGUID(ctx, loaded)
 	if err == nil && left != nil {
 		if tree, terr := s.itemTree(ctx, left); terr == nil {
@@ -1037,8 +1046,9 @@ func hHandThrowGroundbait(ctx *Ctx) ([]byte, bool) {
 		ctx.Log.Info("手抛暂不接管", "item", row.ItemID, "category", cat)
 		return nil, false
 	}
-	if srv.consumeItemQty(pushCtx, row, 1) < 1 {
-		ctx.Log.Warn("手抛扣料失败", "item", row.ItemID, "hand", shortGUID(guid))
+	if _, cerr := srv.consumeItemQtyErr(pushCtx, row, 1); cerr != nil {
+		// 写库失败时背包没变，不能推送也不入窝账，交给下一发重试。
+		ctx.Log.Warn("手抛扣料失败", "item", row.ItemID, "hand", shortGUID(guid), "err", cerr)
 		return nil, false
 	}
 	// 客户端本地那一格已经少了：服务端要么更新数量要么删掉，否则重登就复活。

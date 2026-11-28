@@ -18,6 +18,14 @@ type Frame struct {
 // IsEmpty body_len==0：4 字节零帧（传输层保活）。
 func (f *Frame) IsEmpty() bool { return f.BodyLen == 0 }
 
+// maxFramePayload 单个帧 payload 的协议上限。数值与 internal/tunnel 的
+// maxRecordPayload（32MB）对齐：帧载荷由网关经隧道转发，超过它的帧在隧道层
+// 必然被拒；同时远低于 gateway 读循环 64MB 的缓冲上限。
+const maxFramePayload = 32 << 20
+
+// maxFrameBodyLen 是 body_len 的上限：9 字节头 + payload。
+const maxFrameBodyLen = 9 + maxFramePayload
+
 // ParseFrame 解析一个完整帧；数据不足返回 (nil, nil)；结构非法返回错误。
 //
 // 帧长规则：
@@ -25,6 +33,9 @@ func (f *Frame) IsEmpty() bool { return f.BodyLen == 0 }
 //	body_len == 0 → 4 字节空帧
 //	body_len == 1 → 5 字节，只带 type
 //	body_len >= 9 → 4 + body_len 字节，payload = data[13:4+body_len]
+//
+// body_len > maxFrameBodyLen 视为非法帧：这种长度永远凑不齐，等下去只会让读
+// 缓冲被一个永远满足不了的长度撑大。
 func ParseFrame(data []byte) (*Frame, error) {
 	if len(data) < 4 {
 		return nil, nil
@@ -38,13 +49,16 @@ func ParseFrame(data []byte) (*Frame, error) {
 			return nil, nil
 		}
 		return &Frame{Raw: data[:5], BodyLen: 1, FrameType: data[4], WireID: 0, Payload: nil}, nil
-	case bodyLen < 9:
+	case bodyLen < 9, bodyLen > maxFrameBodyLen:
 		return nil, errAt("frame", "parse", fmt.Sprintf("invalid body_len %d", bodyLen), 0)
 	}
-	total := int(4 + bodyLen)
-	if len(data) < total {
+	// 长度运算必须离开 uint32 域：4+0xFFFFFFFF 在 uint32 里回绕成 3，会让越界帧
+	// 通过下面的长度检查，随后的 data[5:13]、data[13:total] 直接 panic。
+	total64 := uint64(bodyLen) + 4
+	if total64 > uint64(len(data)) {
 		return nil, nil
 	}
+	total := int(total64)
 	return &Frame{
 		Raw:       data[:total],
 		BodyLen:   bodyLen,
@@ -55,6 +69,9 @@ func ParseFrame(data []byte) (*Frame, error) {
 }
 
 // BuildFrame [u32 body_len=9+len][u8 type][u64 wire_id] + payload。
+//
+// 调用方必须保证 len(payload) <= maxFramePayload：body_len 只有 uint32，超限帧
+// ParseFrame 会拒收，写出去也没有对端会接受。
 func BuildFrame(frameType uint8, wireID uint64, payload []byte) []byte {
 	out := make([]byte, 0, 13+len(payload))
 	out = append(out, PackU32(uint32(9+len(payload)))...)
@@ -71,6 +88,7 @@ func BuildZeroFrame() []byte { return PackU32(0) }
 
 // TakeCompleteFrames 从缓冲区头部连续取出完整帧，返回消费掉的字节数。
 // frames 为 nil 时表示缓冲区不足一帧；遇到不完整帧即停止，残余留给下次。
+// ParseFrame 成功时 Raw 至少 4 字节，rest 每轮必然前移，不会空转。
 func TakeCompleteFrames(buffer []byte) (frames []*Frame, consumed int, err error) {
 	rest := buffer
 	for {

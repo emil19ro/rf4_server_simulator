@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -249,6 +250,15 @@ func (d *DB) AdminVerify(ctx context.Context, username, password string) (bool, 
 // AuditLogWrite 记操作审计。
 func (d *DB) AuditLogWrite(ctx context.Context, admin, action, target, detail string) error {
 	_, err := d.SQL.ExecContext(ctx, `
+		INSERT INTO audit_log(admin, action, target, detail, ts) VALUES(?,?,?,?,?)`,
+		admin, action, target, detail, float64(time.Now().Unix()))
+	return err
+}
+
+// AuditLogWriteTx 在调用方事务里写审计行，供需要与业务写入同批提交的管理操作
+// 使用：同连接、同提交或同回滚。
+func (d *DB) AuditLogWriteTx(ctx context.Context, tx *sql.Tx, admin, action, target, detail string) error {
+	_, err := tx.ExecContext(ctx, `
 		INSERT INTO audit_log(admin, action, target, detail, ts) VALUES(?,?,?,?,?)`,
 		admin, action, target, detail, float64(time.Now().Unix()))
 	return err

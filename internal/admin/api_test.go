@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -168,18 +169,43 @@ func TestAdminAPI(t *testing.T) {
 		t.Fatalf("内嵌前端应 200, 实得 %d", code)
 	}
 
-	// 只读页面匿名可看，写操作仍然要令牌
-	if code, _ = call("GET", "/api/dashboard", "", ""); code != 200 {
+	// 只读页面匿名可看，但仪表盘只回健康状态；审计日志含管理员与操作明细，必须登录；写操作仍然要令牌。
+	code, body = call("GET", "/api/dashboard", "", "")
+	if code != 200 {
 		t.Fatalf("匿名读仪表盘应 200, 实得 %d", code)
+	}
+	var anonDash map[string]any
+	if err := json.Unmarshal([]byte(body), &anonDash); err != nil {
+		t.Fatalf("匿名仪表盘响应不是 JSON: %v %s", err, body)
+	}
+	if anonDash["pg"] != "up" {
+		t.Fatalf("匿名仪表盘应报告数据库已连接, 实得 %s", body)
+	}
+	for _, key := range []string{"sessions", "players", "items", "mails", "audits", "tunables"} {
+		if _, ok := anonDash[key]; ok {
+			t.Fatalf("匿名仪表盘不应下发运行态字段 %q, 实得 %s", key, body)
+		}
+	}
+	if code, _ = call("GET", "/api/audit", "", ""); code != 401 {
+		t.Fatalf("匿名读审计日志应 401, 实得 %d", code)
 	}
 	if code, _ = call("POST", "/api/tunables", "", `{"key":"x","value":"1"}`); code != 401 {
 		t.Fatalf("未认证写入应 401, 实得 %d", code)
 	}
 
-	// 仪表盘
+	// 仪表盘：登录后恢复完整运行态统计
 	code, body = call("GET", "/api/dashboard", token, "")
-	if code != 200 || !strings.Contains(body, "players") {
-		t.Fatalf("仪表盘异常: %d %s", code, body)
+	var authDash map[string]any
+	if err := json.Unmarshal([]byte(body), &authDash); err != nil {
+		t.Fatalf("登录后仪表盘响应不是 JSON: %v %s", err, body)
+	}
+	if code != 200 {
+		t.Fatalf("登录后读仪表盘应 200, 实得 %d", code)
+	}
+	for _, key := range []string{"sessions", "players", "items", "mails", "audits", "tunables"} {
+		if _, ok := authDash[key]; !ok {
+			t.Fatalf("登录后仪表盘应下发 %q, 实得 %s", key, body)
+		}
 	}
 
 	// 关于页：README 由二进制内嵌并提供给管理后台
@@ -263,6 +289,56 @@ func TestAdminAPI(t *testing.T) {
 	case err := <-errCh:
 		t.Fatalf("服务异常退出: %v", err)
 	default:
+	}
+}
+
+// 审计日志含管理员账号与操作明细，匿名请求必须 401，登录后才返回内容。
+func TestAuditRequiresAuth(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	if err := db.EnsureAdmin(ctx, "admin", "admin123"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AuditLogWrite(ctx, "admin", "grant_item", "1000001", "红虫×3"); err != nil {
+		t.Fatal(err)
+	}
+	s := NewServer(config.Admin{JWTSecret: "audit-auth-test"}, db, logging.Discard(), WebFS())
+	call := func(method, path, token, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			r.Header.Set("Authorization", "Bearer "+token)
+		}
+		w := httptest.NewRecorder()
+		s.mux.ServeHTTP(w, r)
+		return w
+	}
+
+	anon := call(http.MethodGet, "/api/audit", "", "")
+	if anon.Code != http.StatusUnauthorized {
+		t.Fatalf("匿名读审计日志应 401，实得 %d", anon.Code)
+	}
+	if strings.Contains(anon.Body.String(), "grant_item") {
+		t.Fatalf("匿名响应不应包含审计内容，实得 %s", anon.Body)
+	}
+
+	login := call(http.MethodPost, "/api/login", "", `{"username":"admin","password":"admin123"}`)
+	if login.Code != http.StatusOK {
+		t.Fatalf("登录应 200，实得 %d %s", login.Code, login.Body)
+	}
+	var auth struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(login.Body.Bytes(), &auth); err != nil || auth.Token == "" {
+		t.Fatalf("解析登录令牌失败: %v %s", err, login.Body)
+	}
+
+	got := call(http.MethodGet, "/api/audit?limit=10", auth.Token, "")
+	if got.Code != http.StatusOK {
+		t.Fatalf("登录后读审计日志应 200，实得 %d %s", got.Code, got.Body)
+	}
+	if !strings.Contains(got.Body.String(), "grant_item") || !strings.Contains(got.Body.String(), "admin") {
+		t.Fatalf("登录后应返回审计内容，实得 %s", got.Body)
 	}
 }
 

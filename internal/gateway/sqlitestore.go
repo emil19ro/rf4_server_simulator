@@ -118,42 +118,34 @@ func (s *SQLiteStore) DeleteHandoff(ctx context.Context, token string) error {
 	return err
 }
 
+// useridSeqKey 共享 userid 计数器在 kv 表中的键。
+const useridSeqKey = "userid_seq"
+
+// NextUserid 分配下一个全局 userid（登录签发用）。
+//
+// 取当前值与写回新值必须是同一条语句：先读后写会让并发调用读到同一个旧值，
+// 两名玩家拿到同一个 userid，进而共用一份档案与背包。这里用 UPSERT 自增，
+// 写事务由 SQLite 串行化，分配结果直接取自 RETURNING。
 func (s *SQLiteStore) NextUserid(ctx context.Context) (int64, error) {
-	// 共享 KV 计数器：单机多进程安全（WAL + busy_timeout 串行写）
-	const key = "userid_seq"
-	var cur int64
-	if v, ok, err := s.DB.KVGet(ctx, key); err == nil && ok {
-		_, _ = fmtSscan(v, &cur)
+	var next int64
+	err := s.DB.SQL.QueryRowContext(ctx, `
+		INSERT INTO kv(k, v) VALUES(?, '1')
+		ON CONFLICT (k) DO UPDATE SET v = CAST(CAST(v AS INTEGER) + 1 AS TEXT)
+		WHERE v GLOB '[0-9]*' AND v NOT GLOB '*[^0-9]*'
+		RETURNING CAST(v AS INTEGER)`, useridSeqKey).Scan(&next)
+	if errors.Is(err, sql.ErrNoRows) {
+		// 既有值不是十进制整数时不执行自增：CAST 会把异常值当成 0，写回即把
+		// 计数器重置回 1，新账号会与既有玩家撞号。这种情况报错并保留原值。
+		if v, ok, gerr := s.DB.KVGet(ctx, useridSeqKey); gerr == nil && ok {
+			return 0, fmt.Errorf("userid 计数器 %q 不是十进制整数，拒绝重置", v)
+		}
 	}
-	next := cur + 1
-	if err := s.DB.KVSet(ctx, key, int64ToStr(next)); err != nil {
-		return 0, err
+	if err != nil {
+		// 读库真出错必须报出去：当成「没有计数器」会静默把序号打回 1。
+		return 0, fmt.Errorf("分配 userid 序号: %w", err)
+	}
+	if next <= 0 {
+		return 0, fmt.Errorf("分配 userid 序号: 得到非法值 %d", next)
 	}
 	return next, nil
-}
-
-func fmtSscan(s string, out *int64) (int, error) {
-	return fmt.Sscanf(s, "%d", out)
-}
-
-func int64ToStr(v int64) string {
-	if v == 0 {
-		return "0"
-	}
-	neg := v < 0
-	if neg {
-		v = -v
-	}
-	var buf [20]byte
-	i := len(buf)
-	for v > 0 {
-		i--
-		buf[i] = byte('0' + v%10)
-		v /= 10
-	}
-	if neg {
-		i--
-		buf[i] = '-'
-	}
-	return string(buf[i:])
 }

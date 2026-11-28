@@ -628,10 +628,23 @@ func (s *Server) fishingEndSettle(ctx *Ctx) ([]byte, bool) {
 		}
 	}
 	// 上鱼事件交给成就规则判断一次；2/8 弹窗排在 801 应答之后。
+	// 连续上鱼数只有真正结算（非回执重放）才算一条；中断已在计数器写入处清零。
 	if hasFish {
-		s.evaluateAchievements(ctx, achievementEvent{
-			Kind: evFishLanded, WeightG: pending.WeightG, RigType: rigType, Bait: bait,
-		})
+		var streak int64
+		var streakErr error
+		if res != nil && !res.replayed {
+			streak, streakErr = s.bumpCatchStreak(uid)
+		} else {
+			streak, streakErr = s.catchStreakCount(cctx, uid)
+		}
+		if streakErr != nil {
+			// 读取/累加故障不能当成 0 或沿用旧值判定，否则会静默漏判或误判 904。
+			ctx.Log.Warn("连续上鱼计数读取失败，跳过成就判定", "uid", uid, "err", streakErr)
+		} else {
+			s.evaluateAchievements(ctx, achievementEvent{
+				Kind: evFishLanded, WeightG: pending.WeightG, RigType: rigType, Bait: bait, Streak: streak,
+			})
+		}
 	}
 	for _, cardGUID := range cardGUIDs {
 		if cardGUID == "" {

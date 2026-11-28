@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/pprof"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,7 +29,8 @@ type Server struct {
 	srv *http.Server
 	reg *prometheus.Registry
 
-	ready   bool
+	// ready 由主 goroutine 写、/readyz handler goroutine 读，必须原子访问。
+	ready   atomic.Bool
 	started time.Time
 }
 
@@ -65,7 +67,7 @@ func NewServer(addr, name string) *Server {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if !s.ready {
+		if !s.ready.Load() {
 			http.Error(w, "not ready", http.StatusServiceUnavailable)
 			return
 		}
@@ -90,7 +92,7 @@ func NewServer(addr, name string) *Server {
 func (s *Server) Registry() *prometheus.Registry { return s.reg }
 
 // SetReady 控制就绪探针。
-func (s *Server) SetReady(v bool) { s.ready = v }
+func (s *Server) SetReady(v bool) { s.ready.Store(v) }
 
 // Start 异步启动监听；返回的 channel 在监听失败时收到错误。
 func (s *Server) Start() <-chan error {

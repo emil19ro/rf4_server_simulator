@@ -67,11 +67,7 @@ func main() {
 		}
 		log.Info("管理员已确保存在（仅表空时创建）", "user", user)
 	}
-	adminUser := cfg.Admin.Username
-	adminPass := cfg.Admin.Password
-	if adminUser == "" {
-		adminUser, adminPass = "admin", "admin123" // 配置缺省时兜底默认
-	}
+	adminUser, adminPass := cfg.Admin.EffectiveCredentials()
 	created, err := db.UpsertAdminPassword(ctx, adminUser, adminPass)
 	if err != nil {
 		log.Error("管理员凭据同步失败", "err", err)
@@ -81,6 +77,13 @@ func main() {
 		log.Info("管理员已创建", "user", adminUser)
 	} else {
 		log.Info("管理员凭据已同步", "user", adminUser)
+	}
+
+	for _, warn := range cfg.Admin.WeakWarnings() {
+		log.Warn(warn)
+	}
+	if cfg.Admin.ListenAllInterfaces() {
+		log.Warn("管理后台监听 " + cfg.Admin.HTTPAddr + "，同网段可直接访问；只在本机使用时请把 admin.http_addr 设为 127.0.0.1:8080")
 	}
 
 	srv := admin.NewServer(cfg.Admin, db, log, admin.WebFS())

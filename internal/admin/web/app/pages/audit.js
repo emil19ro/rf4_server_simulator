@@ -1,5 +1,5 @@
 // 操作记录：后台每一次修改，可按类型筛选。
-import { h, apiList, pageHead, work, ib, h2s, hint, note, kv, bullets, pill, badge, empty, searchBox, timeText, relTime } from '../core.js';
+import { h, apiList, pageHead, work, ib, h2s, hint, note, kv, bullets, pill, badge, empty, searchBox, timeText, relTime, btn, getToken, loginDialog } from '../core.js';
 import { auditLabel, AUDIT_LABELS } from '../labels.js';
 
 const KINDS = [
@@ -11,6 +11,17 @@ const KINDS = [
 ];
 
 export default async function audit() {
+  // 审计记录含管理员账号和操作明细，未登录时后端直接 401；这里先给登录入口，避免空白表格。
+  if (!getToken()) {
+    return [
+      pageHead('审计日志', '管理后台里做过的每一次修改（最近 200 条）'),
+      work([
+        h2s('这一页需要登录'),
+        hint('审计日志会暴露管理员账号、操作对象和修改明细，所以只对已登录的会话下发；登录后本页自动加载。'),
+        h('div', { style: { marginTop: '14px' } }, btn('登录管理后台', () => loginDialog(), 'primary')),
+      ], ib('为什么单独拦', null, hint('这条记录能还原谁在什么时候改了什么，属于纯管理数据，不参与首屏渲染。'))),
+    ];
+  }
   const list = await apiList('/api/audit?limit=200');
   let kind = 'all', q = '';
   const tbody = h('tbody');

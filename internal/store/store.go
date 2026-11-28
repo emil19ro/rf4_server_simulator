@@ -9,12 +9,18 @@ package store
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+
+	sqlite "modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 //go:embed migrations/*.sql
@@ -28,6 +34,9 @@ type DB struct {
 	StaticPath     string
 	static         *staticState
 	shopSupplement shopSupplement
+	// migrationLock 串行化本进程内的 Migrate：迁移事务固定在单条物理连接上，
+	// 并发调用会互相抢连接，而不是在写锁上排队。
+	migrationLock sync.Mutex
 }
 
 // Open 打开（必要时创建）主库并设置 WAL/忙等待。该入口不挂载 static，
@@ -37,18 +46,91 @@ func Open(path string) (*DB, error) {
 }
 
 // Migrate 执行内嵌迁移（幂等；自研轻量迁移器，按文件序应用）。
+//
+// gateway、gameserver 与 admin 共享同一个主库，可能同时首次启动。检查是否已应用、
+// 执行迁移、登记已应用必须落在同一临界区里，否则两边都读到"未应用"，后到者重放
+// 没有 IF NOT EXISTS 的 DDL 会以 "table ... already exists" 失败。这里把整个流程
+// 放进同一物理连接的同一事务，并用 BEGIN IMMEDIATE 在事务开头就取得写锁：并发进程
+// 只能在写锁上排队，拿到锁后重新检查就会跳过已应用的迁移。
 func (d *DB) Migrate() error {
-	if _, err := d.SQL.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations(
+	// 迁移事务固定在一条物理连接上，本进程内先排队，避免多个调用抢同一连接。
+	d.migrationLock.Lock()
+	defer d.migrationLock.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), migrationLockTimeout)
+	defer cancel()
+	conn, err := d.SQL.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("获取迁移连接: %w", err)
+	}
+	migrateErr := d.runMigrationTx(ctx, conn)
+	// 静态表只读防护要另取连接（连接池上限为 1），必须先归还迁移连接。
+	closeErr := conn.Close()
+	if migrateErr != nil {
+		return migrateErr
+	}
+	if closeErr != nil {
+		return fmt.Errorf("释放迁移连接: %w", closeErr)
+	}
+	if d.static != nil {
+		guardCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := d.EnableStaticReadOnly(guardCtx); err != nil {
+			return fmt.Errorf("启用静态表只读隔离: %w", err)
+		}
+	}
+	return nil
+}
+
+// migrationLockTimeout 是整次迁移的时限：覆盖取连接、等写锁与全部迁移执行。
+// 等写锁本身还有 busy_timeout（见连接 DSN）兜底；任一环节超时都整体回滚，下次启动重试。
+const migrationLockTimeout = 5 * time.Minute
+
+// migrationExecer 是迁移期间用到的 SQL 能力，事务连接与连接池句柄都满足。
+type migrationExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// isMigrationLockBusy 判断 BEGIN IMMEDIATE 失败是否由写锁被其他进程占用或等锁超时引起。
+func isMigrationLockBusy(err error) bool {
+	var sqliteErr *sqlite.Error
+	if errors.As(err, &sqliteErr) {
+		return sqliteErr.Code() == sqlite3.SQLITE_BUSY || sqliteErr.Code() == sqlite3.SQLITE_LOCKED
+	}
+	return errors.Is(err, context.DeadlineExceeded)
+}
+
+// runMigrationTx 在已取得写锁的事务里跑完所有迁移步骤；任何失败都整体回滚。
+func (d *DB) runMigrationTx(ctx context.Context, conn *sql.Conn) error {
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		if isMigrationLockBusy(err) {
+			return fmt.Errorf("迁移未取得写锁：另一个进程正在迁移，请稍后重试: %w", err)
+		}
+		return fmt.Errorf("开始迁移事务: %w", err)
+	}
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		if _, err := conn.ExecContext(context.Background(), "ROLLBACK"); err != nil {
+			// 回滚都失败时不能把带未提交事务的连接还给连接池，否则写锁不会被释放。
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
+	}()
+	if _, err := conn.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations(
 		version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at REAL NOT NULL)`); err != nil {
 		return fmt.Errorf("建迁移表: %w", err)
 	}
 	// 已应用 00001 的数据库可能缺少后续列。CREATE TABLE IF NOT EXISTS 不会
 	// 修改现有表，因此先补齐这些列，避免仓储查询或写入失败。
-	if err := d.ensureLegacyPlayerColumns(); err != nil {
+	if err := d.ensureLegacyPlayerColumns(ctx, conn); err != nil {
 		return fmt.Errorf("补全玩家表列: %w", err)
 	}
 	// 按文件名识别旧分支，保留同编号的主线迁移。
-	if _, err := d.SQL.Exec(`UPDATE schema_migrations
+	if _, err := conn.ExecContext(ctx, `UPDATE schema_migrations
 		SET version=CASE WHEN name='migrations/00025_bait_consumption.sql' THEN 28 ELSE 30 END,
 		    name=CASE WHEN name='migrations/00025_bait_consumption.sql'
 		      THEN 'migrations/00028_bait_consumption.sql' ELSE 'migrations/00030_cafe_pricing_version.sql' END
@@ -59,21 +141,21 @@ func (d *DB) Migrate() error {
 	}
 	// 钓鱼游分支曾以 00036 登记 trip_grant，上游 00036 现为 fish_ecology：
 	// 按文件名把旧分支行重映射到 00039，让主线 00036 能正常补齐。
-	if _, err := d.SQL.Exec(`UPDATE schema_migrations
+	if _, err := conn.ExecContext(ctx, `UPDATE schema_migrations
 		SET version=39, name='migrations/00039_trip_grant.sql'
 		WHERE name='migrations/00036_trip_grant.sql'`); err != nil {
 		return fmt.Errorf("兼容钓鱼游分支迁移编号: %w", err)
 	}
 	// 海图狩猎分支曾以 00047 登记 marine_hunt，主线 00047 现为
 	// qualification_progress：先挪到 00050，避免与主线 47/48/49 撞号。
-	if _, err := d.SQL.Exec(`UPDATE schema_migrations
+	if _, err := conn.ExecContext(ctx, `UPDATE schema_migrations
 		SET version=50, name='migrations/00050_marine_hunt.sql'
 		WHERE name='migrations/00047_marine_hunt.sql'`); err != nil {
 		return fmt.Errorf("兼容海图狩猎分支迁移编号: %w", err)
 	}
 	// 大鱼狩猎分支曾以 00046 登记 fish_hunt，主线现在已占用 46/47/48：
 	// 按文件名重映射到 00049，让主线迁移能正常补齐。
-	if _, err := d.SQL.Exec(`UPDATE schema_migrations
+	if _, err := conn.ExecContext(ctx, `UPDATE schema_migrations
 		SET version=49, name='migrations/00049_fish_hunt.sql'
 		WHERE name='migrations/00046_fish_hunt.sql'`); err != nil {
 		return fmt.Errorf("兼容大鱼狩猎分支迁移编号: %w", err)
@@ -83,12 +165,12 @@ func (d *DB) Migrate() error {
 		return err
 	}
 	sort.Strings(entries)
-	if err := retireStaleMigrationRows(d.SQL, entries); err != nil {
+	if err := retireStaleMigrationRows(ctx, conn, entries); err != nil {
 		return err
 	}
 	for _, name := range entries {
 		var applied int
-		if err := d.SQL.QueryRow(
+		if err := conn.QueryRowContext(ctx,
 			`SELECT COUNT(*) FROM schema_migrations WHERE name=?`, name).Scan(&applied); err != nil {
 			return err
 		}
@@ -99,18 +181,13 @@ func (d *DB) Migrate() error {
 		if err != nil {
 			return err
 		}
-		tx, err := d.SQL.Begin()
-		if err != nil {
-			return err
-		}
 		if name == "migrations/00055_catch_tackle_cat.sql" {
 			// 该列可能已由早期分支编号建过（分支库曾用 00054 登记过同名列）。
 			// ALTER TABLE ADD COLUMN 不支持 IF NOT EXISTS，重复执行会报 duplicate
 			// column，因此先看列是否已存在，已存在就只跑回填语句。
 			var exists int
-			if err := tx.QueryRow(
+			if err := conn.QueryRowContext(ctx,
 				`SELECT COUNT(*) FROM pragma_table_info('catch_log') WHERE name='tackle_cat'`).Scan(&exists); err != nil {
-				_ = tx.Rollback()
 				return err
 			}
 			if exists > 0 {
@@ -119,13 +196,11 @@ func (d *DB) Migrate() error {
 		}
 		if name == "migrations/00022_membership_exp_compat.sql" {
 			var legacy int
-			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('profile') WHERE name='membership_expires_at'`).Scan(&legacy); err != nil {
-				_ = tx.Rollback()
+			if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM pragma_table_info('profile') WHERE name='membership_expires_at'`).Scan(&legacy); err != nil {
 				return err
 			}
 			if legacy > 0 {
-				if _, err := tx.Exec(`UPDATE profile SET membership_exp=membership_expires_at WHERE membership_exp=0 AND membership=1 AND membership_expires_at BETWEEN 1 AND 253402300799`); err != nil {
-					_ = tx.Rollback()
+				if _, err := conn.ExecContext(ctx, `UPDATE profile SET membership_exp=membership_expires_at WHERE membership_exp=0 AND membership=1 AND membership_expires_at BETWEEN 1 AND 253402300799`); err != nil {
 					return err
 				}
 			}
@@ -138,9 +213,8 @@ func (d *DB) Migrate() error {
 			present := 0
 			for _, col := range spec.columns {
 				var n int
-				if err := tx.QueryRow(
+				if err := conn.QueryRowContext(ctx,
 					fmt.Sprintf(`SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name=?`, spec.table), col).Scan(&n); err != nil {
-					_ = tx.Rollback()
 					return err
 				}
 				present += n
@@ -152,33 +226,25 @@ func (d *DB) Migrate() error {
 				}
 			}
 		}
-		if _, err := tx.Exec(string(body)); err != nil {
-			_ = tx.Rollback()
+		if _, err := conn.ExecContext(ctx, string(body)); err != nil {
 			return fmt.Errorf("迁移 %s: %w", name, err)
 		}
-		if _, err := tx.Exec(
+		if _, err := conn.ExecContext(ctx,
 			`INSERT INTO schema_migrations(version, name, applied_at) VALUES(?,?,?)`,
 			migrationVersion(name), name, float64(time.Now().Unix())); err != nil {
-			_ = tx.Rollback()
-			return err
-		}
-		if err := tx.Commit(); err != nil {
 			return err
 		}
 	}
-	if d.static != nil {
-		guardCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := d.EnableStaticReadOnly(guardCtx); err != nil {
-			return fmt.Errorf("启用静态表只读隔离: %w", err)
-		}
+	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
+		return fmt.Errorf("提交迁移事务: %w", err)
 	}
+	committed = true
 	return nil
 }
 
 // ensureLegacyPlayerColumns 为已存在的玩家表补齐缺失列；新库由 00001
-// 正常创建。列名使用固定白名单，不能把用户输入拼进 DDL。
-func (d *DB) ensureLegacyPlayerColumns() error {
+// 正常创建。列名使用固定白名单，不能把用户输入拼进 DDL。q 必须是迁移事务里的连接。
+func (d *DB) ensureLegacyPlayerColumns(ctx context.Context, q migrationExecer) error {
 	specs := []struct {
 		table   string
 		column  string
@@ -210,7 +276,8 @@ func (d *DB) ensureLegacyPlayerColumns() error {
 	}
 	for _, spec := range specs {
 		var tableExists int
-		if err := d.SQL.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`,
+		if err := q.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`,
 			spec.table).Scan(&tableExists); err != nil {
 			return err
 		}
@@ -218,8 +285,8 @@ func (d *DB) ensureLegacyPlayerColumns() error {
 			continue
 		}
 		var columnExists int
-		q := fmt.Sprintf(`SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name=?`, spec.table)
-		if err := d.SQL.QueryRow(q, spec.column).Scan(&columnExists); err != nil {
+		probe := fmt.Sprintf(`SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name=?`, spec.table)
+		if err := q.QueryRowContext(ctx, probe, spec.column).Scan(&columnExists); err != nil {
 			return err
 		}
 		if columnExists != 0 {
@@ -227,12 +294,7 @@ func (d *DB) ensureLegacyPlayerColumns() error {
 		}
 		stmt := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`,
 			quoteIdentifier(spec.table), quoteIdentifier(spec.column), spec.declSQL)
-		if _, err := d.SQL.Exec(stmt); err != nil {
-			// admin 与 gameserver 可能同时启动并同时补列；后到的进程会收到
-			// duplicate column name，视作已补齐而不是启动失败。
-			if strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
-				continue
-			}
+		if _, err := q.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("%s.%s: %w", spec.table, spec.column, err)
 		}
 	}
@@ -284,14 +346,14 @@ CREATE INDEX IF NOT EXISTS idx_catch_log_uid_tackle ON catch_log(uid, tackle_cat
 // 9000060 已是上一轮 retired/00060_skill_cast_effects，另一分支遗留的同号 60 行
 // 又要退役）时，固定映射 9M+编号 会撞 UNIQUE，服务同样起不来。所以落点从
 // 9M+编号 起向上探测第一个空位，并对本轮已挪走的行记占位，避免相邻编号连锁互踩。
-func retireStaleMigrationRows(sql *sql.DB, entries []string) error {
+func retireStaleMigrationRows(ctx context.Context, q migrationExecer, entries []string) error {
 	known := make(map[string]bool, len(entries))
 	wanted := make(map[int64]bool, len(entries))
 	for _, name := range entries {
 		known[name] = true
 		wanted[migrationVersion(name)] = true
 	}
-	rows, err := sql.Query(`SELECT version, name FROM schema_migrations ORDER BY version`)
+	rows, err := q.QueryContext(ctx, `SELECT version, name FROM schema_migrations ORDER BY version`)
 	if err != nil {
 		return fmt.Errorf("读取迁移登记: %w", err)
 	}
@@ -322,7 +384,8 @@ func retireStaleMigrationRows(sql *sql.DB, entries []string) error {
 		target := staleMigrationVersionBase + s.version
 		for {
 			var n int
-			if err := sql.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version=?`, target).Scan(&n); err != nil {
+			if err := q.QueryRowContext(ctx,
+				`SELECT COUNT(*) FROM schema_migrations WHERE version=?`, target).Scan(&n); err != nil {
 				return fmt.Errorf("探测退役编号 %d: %w", target, err)
 			}
 			if n == 0 && !claimed[target] {
@@ -331,7 +394,8 @@ func retireStaleMigrationRows(sql *sql.DB, entries []string) error {
 			target++
 		}
 		claimed[target] = true
-		if _, err := sql.Exec(`UPDATE schema_migrations SET version=?, name=? WHERE version=? AND name=?`,
+		if _, err := q.ExecContext(ctx,
+			`UPDATE schema_migrations SET version=?, name=? WHERE version=? AND name=?`,
 			target, "retired/"+s.name, s.version, s.name); err != nil {
 			return fmt.Errorf("退役旧分支迁移登记 %s: %w", s.name, err)
 		}

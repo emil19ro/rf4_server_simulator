@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -91,6 +92,14 @@ const tokenSlotCount = 64
 // NewRealtimeServer 构建 realtime 服务。
 func NewRealtimeServer(cfg config.Gateway, store Store, log *slog.Logger, tm *TunnelManager, obs *metrics.Server) *RealtimeServer {
 	initRealtimeMetrics(obsRegistry(obs))
+	// cfg 是值拷贝，这里改写只影响本实例。启动路径上的 config.Load 已经做过同样的
+	// 校验，兜底是为了不依赖调用方一定走过配置加载；非法值必然导致接入面卡死或
+	// 直接 panic，因此必须落到正容量上，并且留下可见告警。
+	if err := config.CheckMaxConns(cfg.MaxConns); err != nil {
+		log.Warn("gateway.max_conns 非法，使用默认值",
+			"value", cfg.MaxConns, "default", config.DefaultMaxConns, "err", err)
+		cfg.MaxConns = config.DefaultMaxConns
+	}
 	return &RealtimeServer{
 		cfg:    cfg,
 		store:  store,
@@ -204,10 +213,20 @@ type clientSession struct {
 	// nextWireID 仅由写者 goroutine 消费；重连恢复时从 handoff 注入，
 	// 保持 wire_id 严格递增。
 	nextWireID uint64
+	// outCh 只由写者消费，永不关闭。入队方是隧道读 goroutine，与本会话的
+	// 收尾并发；关闭发送侧 channel 必然留下「判定未关闭之后、发送之前被
+	// 关」的窗口，那就是 send on closed channel。生命周期一律以 done 为准。
 	outCh      chan outbound
+	done       chan struct{} // 收尾信号，只关闭一次（closeOnce）
+	closeOnce  sync.Once
+	writerDone chan struct{} // 写者退出后关闭
 	closed     atomic.Bool
-	srv        *RealtimeServer
-	log        *slog.Logger
+	writerUp   atomic.Bool // 写者已启动（收尾据此决定是否等它）
+	// aborted 表示会话是异常收尾（goroutine panic）：此时密码流可能只推进
+	// 了一半，落库会让客户端重连承接一份错位的流，收尾不写快照。
+	aborted atomic.Bool
+	srv     *RealtimeServer
+	log     *slog.Logger
 
 	rc4Mu          sync.Mutex   // 保护 Export（读/写协程之外的周期性快照）
 	framesSent     atomic.Int64 // 已发 S→C 数据帧数（防污染守卫）
@@ -220,6 +239,18 @@ func (s *RealtimeServer) handleConn(nc net.Conn) {
 	defer nc.Close()
 	remote := nc.RemoteAddr().String()
 	log := s.log.With("remote", remote)
+
+	// 兜底：本 goroutine 里任何 panic（帧处理、收尾、外部回调触发的路径）
+	// 都只终止这一条会话，不能带走整个网关进程和其余在线连接。
+	// 会话引用的信道先建好，兜底路径也要用它们把会话收干净。
+	var sess *clientSession
+	defer func() {
+		if r := recover(); r != nil {
+			s.recoverSession("连接会话", r, sess, log)
+		}
+	}()
+	doneCh := make(chan struct{})
+	outCh := make(chan outbound, 1024)
 
 	// ---- 握手阶段（认证包 → 问候 → hermes）----
 	_ = nc.SetReadDeadline(time.Now().Add(30 * time.Second))
@@ -315,12 +346,14 @@ func (s *RealtimeServer) handleConn(nc net.Conn) {
 	log.Info("Hermes 握手完成")
 
 	// ---- RC4 初始化（重连接管优先）----
-	sess := &clientSession{
+	sess = &clientSession{
 		id:         s.sidSeq.Add(1),
 		conn:       nc,
 		token:      token,
 		userid:     info.Userid,
-		outCh:      make(chan outbound, 1024),
+		outCh:      outCh,
+		done:       doneCh,
+		writerDone: make(chan struct{}),
 		nextWireID: 1,
 		srv:        s,
 		log:        log,
@@ -396,6 +429,8 @@ func (s *RealtimeServer) handleConn(nc net.Conn) {
 	}
 	s.writers.Add(1)
 	s.writerMu.Unlock()
+	// 写者即将启动：收尾路径据此决定要不要等它（panic 可能发生在启动之前）。
+	sess.writerUp.Store(true)
 
 	// 到这里写者已登记、必然会被启动并收尾，承接状态才算真正「交出去」：
 	// 写者退出前会重新保存最新快照。删除必须落在「OPEN 成功 + 写者已登记」
@@ -403,13 +438,22 @@ func (s *RealtimeServer) handleConn(nc net.Conn) {
 	// 这里再删，等于把刚存的状态删掉；放在 OPEN 之前则有 P1：sendOpen 失败
 	// 或撞上关闭提前返回，库里那份状态成了永远没人读的孤儿。
 	if sess.resumed {
-		_ = s.store.DeleteHandoff(context.Background(), token)
+		// 删除失败不能静默：残留的旧快照带着已被消费的 wire_id，客户端下次重连
+		// 会从更早的位置续流，整条下行解不开。写者启动后还会覆盖这一行，
+		// 所以只告警，不重试。
+		if err := s.store.DeleteHandoff(context.Background(), token); err != nil {
+			log.Warn("承接状态删除失败，旧快照可能残留", "err", err, "token_len", len(token))
+		}
 	}
 
-	writerDone := make(chan struct{})
 	go func() {
 		defer s.writers.Done()
-		sess.writer(writerDone)
+		defer func() {
+			if r := recover(); r != nil {
+				s.recoverSession("写者", r, sess, log)
+			}
+		}()
+		sess.writer()
 	}()
 
 	// ---- 读循环 ----
@@ -446,9 +490,10 @@ func (s *RealtimeServer) handleConn(nc net.Conn) {
 		_ = nc.SetReadDeadline(time.Now().Add(120 * time.Second))
 	}
 
-	sess.closed.Store(true)
-	close(sess.outCh)
-	<-writerDone // 写者收尾（含 handoff 保存）
+	// 收尾：关 done 让写者停下并保存 handoff，再等它归零。outCh 始终不
+	// 关闭——入队方是隧道读 goroutine，与本收尾并发，「先判已关闭再发送」
+	// 挡不住判定之后才发生的关闭。
+	sess.drain()
 	_ = s.tm.sendClose(sess.id, "session_end")
 	s.log.Info("会话结束", "sid", sess.id, "resumed", sess.resumed)
 }
@@ -483,8 +528,8 @@ func (s *clientSession) handleFrame(f *proto.Frame) bool {
 	case f.FrameType == 0:
 		rtFramesIn.WithLabelValues("data").Inc()
 		// 协议要求先 ACK 后处理；ACK 无载荷，不消耗 keystream。
-		if s.srv.cfg.AckClientFrames {
-			s.outCh <- outbound{kind: outAck, wireID: f.WireID}
+		// 入队必须非阻塞：写者卡住或会话正在收尾时，读循环不能被它拖住。
+		if s.srv.cfg.AckClientFrames && s.enqueue(outbound{kind: outAck, wireID: f.WireID}) {
 			rtAcksSent.Inc()
 		}
 		plain := s.rc4In.Crypt(f.Payload)
@@ -504,8 +549,8 @@ func (s *clientSession) handleFrame(f *proto.Frame) bool {
 // writer 是会话的唯一写者，依次执行分配 wire_id、RC4 加密和写 socket。
 // call_id 分配、RC4 消耗与发送必须保持同一顺序；主服经隧道 FIFO 下发完整信封，
 // 写者只负责 wire_id、加密和输出。
-func (s *clientSession) writer(done chan<- struct{}) {
-	defer close(done)
+func (s *clientSession) writer() {
+	defer close(s.writerDone)
 	keepalive := time.NewTicker(keepaliveInterval(s.srv.cfg.TransportKeepaliveSec))
 	defer keepalive.Stop()
 
@@ -523,15 +568,22 @@ func (s *clientSession) writer(done chan<- struct{}) {
 
 drain:
 	for {
+		// 收尾信号优先于队列：队列里还有积压时也要能立刻停下，
+		// 不卡在接收上。
 		select {
+		case <-s.done:
+			break drain
+		default:
+		}
+
+		select {
+		case <-s.done:
+			break drain
+
 		case <-periodicSave.C:
 			s.saveHandoff(nextWireID)
-			continue
 
-		case task, ok := <-s.outCh:
-			if !ok {
-				break drain
-			}
+		case task := <-s.outCh:
 			switch task.kind {
 			case outAck:
 				if _, err := s.conn.Write(proto.BuildAckFrame(task.wireID)); err != nil {
@@ -555,7 +607,7 @@ drain:
 				_ = s.conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 
 			case outFinish:
-				// 不会出现在 channel（close(outCh) 退出）；防御
+				// 收尾走 done 信号，队列里只会有 data/ack；防御
 			}
 
 			if s.closed.Load() {
@@ -631,6 +683,10 @@ func (s *clientSession) saveHandoff(nextWireID uint64) {
 	if s.rc4In == nil || s.rc4Out == nil {
 		return
 	}
+	if s.aborted.Load() {
+		// 异常收尾：密码流可能只推进了一半，落库会让客户端重连承接错位的流。
+		return
+	}
 	// 所有权校验必须和导出、落库在同一临界区里，直到写进数据库才放开：
 	// 只做一次布尔检查的话，旧写者通过检查后可能被调度走，新会话趁机接管
 	// 并写入更新的 next_wire_id，随后旧写者把自己那份更旧的快照写回去
@@ -661,13 +717,26 @@ func (s *clientSession) saveHandoff(nextWireID uint64) {
 }
 
 // EnqueueData 主服下行的明文信封入队（隧道读 goroutine 调用）。
+//
+// 入队与收尾是并发的：隧道读 goroutine 可能刚按 sid 取到会话，会话就结束了。
+// 因此生命周期只认 done，发送一律非阻塞，且 outCh 从不关闭——不存在
+// 「判定未关闭之后、发送之前被关闭」的窗口。
 func (s *clientSession) EnqueueData(payload []byte) bool {
-	if s.closed.Load() {
+	return s.enqueue(outbound{kind: outData, payload: payload})
+}
+
+// enqueue 非阻塞入队；会话已进入收尾时返回 false。
+func (s *clientSession) enqueue(msg outbound) bool {
+	select {
+	case <-s.done:
 		return false
+	default:
 	}
 	select {
-	case s.outCh <- outbound{kind: outData, payload: payload}:
+	case s.outCh <- msg:
 		return true
+	case <-s.done:
+		return false
 	default:
 		s.log.Warn("下行队列满（慢客户端），断开")
 		s.closed.Store(true)
@@ -680,6 +749,57 @@ func (s *clientSession) Close(reason string) {
 	if s.closed.CompareAndSwap(false, true) {
 		s.log.Info("主服要求断开", "reason", reason)
 		_ = s.conn.Close()
+	}
+}
+
+// drain 收尾：通知写者停下并落库收尾快照，等它归零后返回。
+//
+// 队列里剩余的帧直接丢弃：连接已在收尾，继续写只会推进密码流，
+// 让客户端重连时承接一份它从没收到的进度。
+//
+// 会话 goroutine 与兜底 recover 都会调用；重复调用只等同一份完成。
+func (s *clientSession) drain() {
+	s.closed.Store(true)
+	s.closeOnce.Do(func() { close(s.done) })
+	s.waitWriter()
+}
+
+// waitWriter 等写者退出；写者没启动过就不等（panic 可能早于启动）。
+func (s *clientSession) waitWriter() {
+	if s.writerUp.Load() {
+		<-s.writerDone
+	}
+}
+
+// panicClose 异常收尾：断开连接、等写者退出，但不写承接状态。
+func (s *clientSession) panicClose() {
+	s.aborted.Store(true)
+	s.closed.Store(true)
+	if s.conn != nil {
+		_ = s.conn.Close()
+	}
+	s.closeOnce.Do(func() { close(s.done) })
+	s.waitWriter()
+}
+
+// recoverSession 记录异常并关闭出事的会话，其它会话照常运行。
+//
+// 网关是单进程多连接：handler、写者或回调里的一次 panic 若没人接住，
+// 整个进程会被带走，全部在线连接同时掉线。这里只处置出事的会话，不上抛。
+func (s *RealtimeServer) recoverSession(where string, r any, sess *clientSession, log *slog.Logger) {
+	log.Error("会话 goroutine 异常退出", "where", where, "panic", r, "stack", string(debug.Stack()))
+	if sess == nil {
+		return
+	}
+	sess.panicClose()
+	// 通知主服释放这条会话，否则它会留下一条没有 CLOSE 的悬挂会话。
+	// 异步发送：sendClose 可能卡在隧道拨号退避上，异常收尾不能被它拖住。
+	if s.tm != nil {
+		go func() {
+			if err := s.tm.sendClose(sess.id, "session_panic"); err != nil {
+				log.Warn("异常收尾时通知主服失败", "err", err)
+			}
+		}()
 	}
 }
 

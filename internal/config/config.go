@@ -5,7 +5,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -103,11 +105,69 @@ func (g *Game) KeepaliveInterval() time.Duration {
 }
 
 type Admin struct {
-	HTTPAddr  string `yaml:"http_addr"` // 仅 cmd/admin 独立调试监听，如 :8080
+	HTTPAddr  string `yaml:"http_addr"` // 仅 cmd/admin 独立监听；默认只绑回环，需要局域网访问时显式改成 :8080
 	JWTSecret string `yaml:"jwt_secret"`
 	ObsAddr   string `yaml:"obs_addr"`
 	Username  string `yaml:"username"` // 管理员账号（以配置为准，启动时同步）
 	Password  string `yaml:"password"` // 管理员密码（明文进 yaml，注意文件权限）
+}
+
+// 本地开箱默认值：发布包首次启动即可登录管理后台，对外开放前必须替换。
+const (
+	DefaultAdminUsername  = "admin"
+	DefaultAdminPassword  = "admin123"
+	DefaultAdminJWTSecret = "change-me"
+)
+
+// EffectiveCredentials 返回启动时应同步到 admin_user 的账号与密码。
+// 用户名缺省时整体回退到本地默认 admin/admin123，与发布包开箱即用的约定一致；
+// 只配置了用户名而没有配置密码时保持空密码（由 WeakWarnings 提示），不擅自套用默认值。
+func (a Admin) EffectiveCredentials() (username, password string) {
+	if strings.TrimSpace(a.Username) == "" {
+		return DefaultAdminUsername, DefaultAdminPassword
+	}
+	return a.Username, a.Password
+}
+
+// ListenAllInterfaces 报告 http_addr 是否会监听非回环网卡。
+// 空地址、":8080" 形式的通配地址与主机名都算；只有回环地址和 localhost 不算。
+func (a Admin) ListenAllInterfaces() bool {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(a.HTTPAddr))
+	if err != nil {
+		host = strings.TrimSpace(a.HTTPAddr)
+	}
+	if host == "" {
+		return true
+	}
+	if strings.EqualFold(host, "localhost") {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip == nil || !ip.IsLoopback()
+}
+
+// WeakWarnings 列出管理端仍在用默认凭据或默认签名密钥的项，供各进程启动时告警。
+// 返回空切片表示没有发现问题；文案直接给出配置项名，便于照着改。
+func (a Admin) WeakWarnings() []string {
+	// 告警必须按实际会写入 admin_user 的凭据判断：用户名为空时
+	// EffectiveCredentials 会整体回退到 admin/admin123，此时即使配置里写了
+	// 自定义密码，实际生效的仍是弱口令。
+	username, password := a.EffectiveCredentials()
+	out := []string{}
+	switch {
+	case strings.TrimSpace(password) == "":
+		out = append(out, "管理后台密码为空：请设置 config.yaml 的 admin.password 或环境变量 RF4_ADMIN_PASSWORD")
+	case password == DefaultAdminPassword:
+		if strings.TrimSpace(a.Username) == "" {
+			out = append(out, "管理后台用户名 "+username+" 来自缺省回退，实际使用默认密码 "+DefaultAdminPassword+"：请设置 config.yaml 的 admin.username 和 admin.password，开放到局域网前必须替换")
+		} else {
+			out = append(out, "管理后台仍使用默认密码 "+DefaultAdminPassword+"：请修改 config.yaml 的 admin.password 或环境变量 RF4_ADMIN_PASSWORD，开放到局域网前必须替换")
+		}
+	}
+	if strings.TrimSpace(a.JWTSecret) == "" || a.JWTSecret == DefaultAdminJWTSecret {
+		out = append(out, "管理后台 JWT 签名密钥仍为默认值：请修改 config.yaml 的 admin.jwt_secret 或环境变量 RF4_ADMIN_JWT_SECRET，否则知道默认值的人可以自行签发管理令牌")
+	}
+	return out
 }
 
 // Launcher 本地启动器设置。
@@ -156,7 +216,7 @@ func defaults() *Config {
 			Region:                "CN",
 			ServerName:            "RF4_566",
 			LoginDomain:           "api.rf4game.ru",
-			MaxConns:              512,
+			MaxConns:              DefaultMaxConns,
 			AckClientFrames:       true,
 			TransportKeepaliveSec: 5.0,
 			Tunnel:                Tunnel{Addr: "127.0.0.1:9401", PSK: "change-me"},
@@ -176,11 +236,11 @@ func defaults() *Config {
 			KeepaliveIntervalSec: 5.0,
 		},
 		Admin: Admin{
-			HTTPAddr:  ":8080",
-			JWTSecret: "change-me",
+			HTTPAddr:  "127.0.0.1:8080",
+			JWTSecret: DefaultAdminJWTSecret,
 			ObsAddr:   ":9503",
-			Username:  "admin",
-			Password:  "admin123",
+			Username:  DefaultAdminUsername,
+			Password:  DefaultAdminPassword,
 		},
 	}
 }
@@ -256,6 +316,18 @@ func (c *Config) resolveLanguage() {
 	c.Game.Language = lang
 }
 
+// realtime 连接上限。默认值与上限都只是容量约束：0 会让连接信号量变成无缓冲
+// channel，负数会让 make(chan, n) 直接 panic，所以两者都必须在启动前挡掉。
+const (
+	// DefaultMaxConns 是 gateway.max_conns 的默认值，也是未配置时的生效值。
+	DefaultMaxConns = 512
+	// MaxAllowedConns 是 gateway.max_conns 允许的上限。
+	MaxAllowedConns = 100000
+)
+
+// ErrMaxConns 表示 gateway.max_conns 超出允许范围，调用方可用 errors.Is 判断。
+var ErrMaxConns = errors.New("gateway.max_conns 超出允许范围")
+
 func (c *Config) validate() error {
 	if c.SQLite.Path == "" {
 		return fmt.Errorf("sqlite.path 未配置")
@@ -265,6 +337,20 @@ func (c *Config) validate() error {
 	}
 	if c.Gateway.AdvertisePort == 0 {
 		return fmt.Errorf("gateway.advertise_port 未配置")
+	}
+	if err := CheckMaxConns(c.Gateway.MaxConns); err != nil {
+		return err
+	}
+	return nil
+}
+
+// CheckMaxConns 校验 realtime 最大并发连接数。
+//
+// 只有正容量才能约束接入循环：0 会让第二条连接起在 sem 上永久阻塞，负数会让
+// make(chan, n) 直接 panic。错误信息带上配置项名与当前值，便于定位配置文件。
+func CheckMaxConns(n int) error {
+	if n < 1 || n > MaxAllowedConns {
+		return fmt.Errorf("%w: gateway.max_conns=%d，允许范围 1..%d", ErrMaxConns, n, MaxAllowedConns)
 	}
 	return nil
 }

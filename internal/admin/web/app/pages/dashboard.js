@@ -1,4 +1,4 @@
-import { h, api, apiList, fmt, tsNum, timeText, clockText, icon, navigate, empty, pageHead, work, ib, h2s, h3s, hint, note, kv, bullets, pill, brief, tbl, logsBlock, startGrid, searchBox, btn, render } from '../core.js';
+import { h, api, apiList, fmt, tsNum, timeText, clockText, icon, navigate, empty, pageHead, work, ib, h2s, h3s, hint, note, kv, bullets, pill, brief, tbl, logsBlock, startGrid, searchBox, btn, callout, render, getToken, loginDialog } from '../core.js';
 import { auditLabel } from '../labels.js';
 import { updateBanner, buildLabel, themeMenu } from '../main.js';
 
@@ -16,9 +16,12 @@ const RULES = [
 ];
 
 export default async function dashboard() {
+  // 未登录时后端只回数据库可用状态，审计日志则要求登录：这一页照常渲染，
+  // 运行态数字和日志只对已登录的会话出现，不把 401 当成加载失败。
+  const signedIn = !!getToken();
   const [d, audits, tuns, mode, stores] = await Promise.all([
     api('/api/dashboard'),
-    apiList('/api/audit?limit=24').catch(() => []),
+    signedIn ? apiList('/api/audit?limit=24').catch(() => []) : [],
     api('/api/tunables').catch(() => ({})),
     api('/api/fish/bite_mode').catch(() => ({})),
     apiList('/api/stores').catch(() => []),
@@ -29,6 +32,7 @@ export default async function dashboard() {
   const enabled = RULES.filter(([k]) => on(k)).map(([, n]) => n);
   const overrideCount = stores.reduce((n, s) => n + (s.override_count || 0), 0);
   const pg = d.pg || '';
+  const warnings = Array.isArray(d.warnings) ? d.warnings : [];
   const port = location.port || '9500';
 
   const updates = [...audits]
@@ -79,25 +83,34 @@ export default async function dashboard() {
       themeMenu()),
     work([
       updSlot,
-      brief([
+      warnings.length
+        ? h('div', { class: 'alert' }, h('b', { text: '管理后台仍是默认凭据或默认密钥：' }), h('ul', { class: 'bullets' }, ...warnings.map((w) => h('li', { text: w }))))
+        : null,
+      signedIn ? brief([
         [fmt(d.sessions), '在线玩家'],
         [fmt(d.players), '档案'],
         [fmt(d.tunables), '可调参数'],
         [fmt(d.items), '物品'],
-      ]),
+      ]) : null,
+      signedIn ? null : callout('info', ['未登录时只显示数据库连接状态。',
+        '登录后这里会补上在线玩家、档案、物品数和最近的审计记录。',
+        ' ', btn('登录管理后台', () => loginDialog(), 'primary')]),
       h2s('从这里开始'),
       hint('每条进去都是一整条流程：先看现在是什么，改完核对，最后保存。'),
       startGrid(STARTS.map(([r, ic, t, s]) => ({
         icon: ic, title: t, sub: s, href: '#' + r,
         onClick: (e) => { e.preventDefault(); navigate(r); },
       }))),
-      h3s('运行日志'),
-      hint('后台审计表里最近的记录，可以按动作、对象或管理员筛。', { margin: '0 0 8px' }),
-      h('div', { class: 'search logs-toolbar' },
-        searchBox('搜动作、对象或管理员', (v) => { search.q = v; drawLogs(); }),
-        btn('刷新', () => render(), 'ghost')),
-      logsBox,
-      note('日志的来源。', '这里读的是后台审计表，不是游戏进程的 stdout；谁在什么时候改了哪一项，都在这里。'),
+      // 审计日志要求登录，未登录时不画这块，也不去请求它。
+      signedIn ? [
+        h3s('运行日志'),
+        hint('后台审计表里最近的记录，可以按动作、对象或管理员筛。', { margin: '0 0 8px' }),
+        h('div', { class: 'search logs-toolbar' },
+          searchBox('搜动作、对象或管理员', (v) => { search.q = v; drawLogs(); }),
+          btn('刷新', () => render(), 'ghost')),
+        logsBox,
+        note('日志的来源。', '这里读的是后台审计表，不是游戏进程的 stdout；谁在什么时候改了哪一项，都在这里。'),
+      ] : null,
       h3s('当前生效的关键口径'),
       tbl(['项目', '现在是什么', '去哪改'], canons.map(([k, v, r]) => [
         k,
@@ -109,20 +122,20 @@ export default async function dashboard() {
         kv([
           ['服务地址', location.host || '127.0.0.1:' + port],
           ['数据库', pg === 'up' ? '已连接' : (pg || '未上报')],
-          ['在线玩家', fmt(d.sessions)],
-          ['建档角色', fmt(d.players)],
-          ['物品总数', fmt(d.items)],
-          ['可调参数', fmt(d.tunables) + ' 项'],
-          ['审计记录', fmt(d.audits) + ' 条'],
+          signedIn ? ['在线玩家', fmt(d.sessions)] : null,
+          signedIn ? ['建档角色', fmt(d.players)] : null,
+          signedIn ? ['物品总数', fmt(d.items)] : null,
+          signedIn ? ['可调参数', fmt(d.tunables) + ' 项'] : null,
+          signedIn ? ['审计记录', fmt(d.audits) + ' 条'] : null,
           ['前端版本', buildLabel()],
         ]),
       ]),
-      ib('最近修改', '按时间倒序，只列最近几条。', [
+      signedIn ? ib('最近修改', '按时间倒序，只列最近几条。', [
         updates.length
           ? kv(updates.slice(0, 5).map((u) => [clockText(u.ts), h('span', {}, h('b', { text: u.what }), u.target ? h('span', { class: 'mono', text: ' · ' + u.target }) : null)]))
           : empty('还没有修改记录'),
         h('p', { class: 'hint' }, h('a', { href: '#audit', text: '看全部审计日志 →', onclick: (e) => { e.preventDefault(); navigate('audit'); } })),
-      ]),
+      ]) : null,
       ib('这一页的数据', '没有假数字，读不到就写「未上报」。', bullets([
         h('span', {}, '在线、档案、物品、参数条数来自 ', h('b', { text: '/api/dashboard' }), '。'),
         h('span', {}, '关键口径来自 ', h('b', { text: '/api/tunables' }), ' 与 ', h('b', { text: '/api/fish/bite_mode' }), '。'),

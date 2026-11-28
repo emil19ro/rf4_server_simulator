@@ -340,9 +340,12 @@ func (d *DB) SetCompetitionTeam(ctx context.Context, compID string, uid, team in
 		return nil, false, err
 	}
 	if n == 0 {
+		// 查询失败必须上抛：吞掉会让数据库故障伪装成「非成员」。
 		var exists int
-		_ = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM competition_member WHERE comp_id=? AND uid=?`,
-			compID, uid).Scan(&exists)
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM competition_member WHERE comp_id=? AND uid=?`,
+			compID, uid).Scan(&exists); err != nil {
+			return nil, false, err
+		}
 		if exists == 0 {
 			return nil, false, ErrCompetitionNotMember
 		}

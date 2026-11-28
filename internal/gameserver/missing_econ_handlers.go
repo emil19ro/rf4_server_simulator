@@ -66,13 +66,21 @@ func hWorkshopRedeem(ctx *Ctx) ([]byte, bool) {
 func hStoreBoats(ctx *Ctx) ([]byte, bool) {
 	out := proto.Args(proto.S("149"))
 	for _, row := range loadShopBoats() {
-		out.Items = append(out.Items, wiregen.MustMakeObj("efdgfpfbjai", map[int]*proto.Value{
+		// 船只条目由数据表驱动，类名缺失属装配错误；这里回失败而不是 panic，
+		// 免得一条商店请求打崩主服，同时保留日志里的具体类名。
+		item, err := wiregen.MakeObj("efdgfpfbjai", map[int]*proto.Value{
 			0: proto.StrVal(row.Name),
 			1: proto.U32(row.F1),
 			2: proto.U64(row.Tickets),
 			3: proto.U32(row.F3),
 			4: proto.U64(row.Price),
-		}))
+		})
+		if err != nil {
+			ctx.Log.Error("22/5 船只条目构造失败", "err", err, "name", row.Name)
+			ctx.ReplyFailure("System.InvalidOperationException", "船只商店数据读取失败，请重试")
+			return nil, true
+		}
+		out.Items = append(out.Items, item)
 	}
 	body, err := proto.EncodeValue(out, ctx.Sess.Table())
 	if err != nil {

@@ -23,7 +23,8 @@ type reader struct {
 func (r *reader) remaining() int { return len(r.data) - r.pos }
 
 func (r *reader) need(n int, what string) error {
-	if r.pos+n > len(r.data) {
+	// n 可能来自协议里的 u32 长度转换，32 位平台上会变成负数，必须先判负。
+	if n < 0 || n > r.remaining() {
 		return errAt("decode", what, "EOF", r.pos)
 	}
 	return nil

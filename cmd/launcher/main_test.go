@@ -121,3 +121,30 @@ func TestOverviewWithoutAdminDB(t *testing.T) {
 		t.Fatalf("未就绪时应报 ready=false: %s", rr.Body.String())
 	}
 }
+
+// 配置缺省时控制中心要展示实际生效的账号，避免页面写死 default 与真实凭据不一致。
+func TestOverviewFallsBackToEffectiveAdminUsername(t *testing.T) {
+	a := &app{cfg: &config.Config{}}
+	rr := httptest.NewRecorder()
+	a.handleOverview(rr, httptest.NewRequest(http.MethodGet, "/api/overview", nil))
+	var out struct {
+		AdminUser string `json:"admin_user"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatalf("解析概览响应失败: %v，响应体: %s", err, rr.Body.String())
+	}
+	if out.AdminUser != config.DefaultAdminUsername {
+		t.Fatalf("缺省配置下的后台账号应为 %q，实得 %q", config.DefaultAdminUsername, out.AdminUser)
+	}
+
+	a = &app{cfg: &config.Config{Admin: config.Admin{Username: "boss"}}}
+	rr = httptest.NewRecorder()
+	a.handleOverview(rr, httptest.NewRequest(http.MethodGet, "/api/overview", nil))
+	out.AdminUser = ""
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatalf("解析概览响应失败: %v，响应体: %s", err, rr.Body.String())
+	}
+	if out.AdminUser != "boss" {
+		t.Fatalf("配置了管理员账号时应原样返回，实得 %q", out.AdminUser)
+	}
+}

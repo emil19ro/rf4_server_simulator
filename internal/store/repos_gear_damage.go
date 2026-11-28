@@ -60,6 +60,13 @@ func BumpPlayerCounter(ctx context.Context, exec SQLExecer, uid int64, key strin
 	return err
 }
 
+// ResetPlayerCounter 把指定计数器归零，未落过计数行时不写。
+// 由写入方决定哪些事件算「打断」，本函数只负责清零。
+func ResetPlayerCounter(ctx context.Context, exec SQLExecer, uid int64, key string) error {
+	_, err := exec.ExecContext(ctx, `UPDATE player_counters SET value=0 WHERE uid=? AND key=?`, uid, key)
+	return err
+}
+
 // ListItemDamageLogs 返回玩家最近的损伤历史，limit<=0 时默认 100 条。
 func (d *DB) ListItemDamageLogs(ctx context.Context, uid int64, limit int) ([]ItemDamageLog, error) {
 	if limit <= 0 {

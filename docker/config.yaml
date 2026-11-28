@@ -8,3 +8,6 @@ gateway:
 game:
   tunnel:
     addr: ":9401"
+
+admin:
+  http_addr: ":8080"   # 容器内监听所有网卡，宿主机通过端口映射访问。

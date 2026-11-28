@@ -7,6 +7,7 @@ x-rf4: &rf4
     RF4_TUNNEL_PSK: "${RF4_DOCKER_TUNNEL_PSK:-rf4-local-compose-tunnel}"
     RF4_GAME_TUNNEL_PSK: "${RF4_DOCKER_TUNNEL_PSK:-rf4-local-compose-tunnel}"
     RF4_ADMIN_JWT_SECRET: "${RF4_ADMIN_JWT_SECRET:-rf4-local-compose-admin}"
+    # 本机开箱默认口令；端口默认只绑回环，暴露到局域网前必须改成随机值。
     RF4_ADMIN_PASSWORD: "${RF4_ADMIN_PASSWORD:-admin123}"
   volumes:
     - player-data:/app/data

@@ -120,6 +120,9 @@ python tools/pack_item_icons.py
 
 管理操作产生的变更会写入 `audit_log`。控制台提供只读的审计列表。
 
+审计记录带管理员账号、操作对象和修改明细，因此 `GET /api/audit` 必须带 JWT，未登录返回 401。
+`GET /api/dashboard` 未登录时只返回数据库连接状态（`pg`）；在线会话数、角色数、物品数、邮件数和审计条数只在已登录时下发。
+
 ## API
 
 统一入口下，以下路径均增加 `/admin` 前缀，例如登录为 `POST /admin/api/login`。除登录外，其他请求均需将 JWT 作为 bearer token 提交。独立调试 `cmd/admin` 时仍直接使用 `/api/*`。

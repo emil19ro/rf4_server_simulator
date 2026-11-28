@@ -78,7 +78,8 @@ func TestCafe29UpgradePreservesSaveAndCampfireMigrationRollsBack(t *testing.T) {
 	assertCount(t, db, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='campfire_state'`, 0)
 	assertCount(t, db, `SELECT COUNT(*) FROM cafe_order WHERE order_id='legacy29' AND pricing_version=2 AND reward_cents=1234`, 1)
 	assertCount(t, db, `SELECT COUNT(*) FROM cafe_order_completion WHERE order_id='legacy29' AND reward_cents=1234`, 1)
-	assertCount(t, db, `SELECT COUNT(*) FROM schema_migrations WHERE version=30 AND name='migrations/00030_cafe_pricing_version.sql' AND applied_at=42`, 1)
+	// 整个迁移是一个事务：失败时旧登记行的改号也一起回滚，行仍在原位、applied_at 不变。
+	assertCount(t, db, `SELECT COUNT(*) FROM schema_migrations WHERE version=29 AND name='migrations/00029_cafe_pricing_version.sql' AND applied_at=42`, 1)
 	if _, err := db.SQL.Exec(`DROP TRIGGER reject_campfire_migration`); err != nil {
 		t.Fatal(err)
 	}

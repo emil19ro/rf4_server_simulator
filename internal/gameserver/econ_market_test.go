@@ -365,25 +365,28 @@ func TestMarketPricingModel(t *testing.T) {
 	}
 }
 
-// TestWorkshopRepairCost 验证修理费用公式。
+// TestWorkshopRepairCost 验证修理费用公式：基础价 + 每个可修零件价。
 func TestWorkshopRepairCost(t *testing.T) {
 	t.Parallel()
-	if got := repairCost(0, false, 1.0, 1.0); got != 300 {
-		t.Errorf("银修（1 槽全额磨损）= %d want 300", got)
+	if got := repairCost(0, false, 1.0, 1.0); got != 150 { // 零件数下限按 1 计
+		t.Errorf("银修（1 个零件全额磨损）= %d want 150", got)
 	}
-	if got := repairCost(3, false, 0.5, 1.0); got != 250 {
-		t.Errorf("银修（3 槽半磨损）= %d want 250", got)
+	if got := repairCost(6, false, 1.0, 1.0); got != 300 { // 6 件典型渔轮整机价
+		t.Errorf("银修（6 个零件全额磨损）= %d want 300", got)
 	}
-	if got := repairCost(0, false, 0.0, 1.0); got != 75 { // 下限 25%
-		t.Errorf("银修（磨损下限）= %d want 75", got)
+	if got := repairCost(3, false, 0.5, 1.0); got != 105 {
+		t.Errorf("银修（3 个零件半磨损）= %d want 105", got)
+	}
+	if got := repairCost(0, false, 0.0, 1.0); got != 38 { // 下限 25%，150×0.25=37.5
+		t.Errorf("银修（磨损下限）= %d want 38", got)
 	}
 	if got := repairCost(0, true, 1.0, 1.0); got != 1 {
 		t.Errorf("金修 = %d want 1", got)
 	}
 }
 
-// TestWorkshopRepairMapAndBrandMultiplier 验证地图倍率、品牌覆盖、
-// 店铺地图优先级和未知数据回退。
+// TestWorkshopRepairMapAndBrandMultiplier 验证地图倍率、品牌覆盖，
+// 以及店铺只在所属地图就是玩家当前地图时才提供品牌列。
 func TestWorkshopRepairMapAndBrandMultiplier(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -400,29 +403,30 @@ func TestWorkshopRepairMapAndBrandMultiplier(t *testing.T) {
 		{name: "拉多加Beluga", mapKey: "level_006_ladoga", brands: []string{"beluga"}, want: 0.85},
 		{name: "琥珀湖Zeiman", mapKey: "level_014_carp_lake", brands: []string{"zeiman"}, want: 0.85},
 		{name: "未知图", mapKey: "no_such_map", want: 1.0},
-		{name: "店铺地图优先", storeID: "workshop_02", mapKey: "level_001_lake", want: 0.85},
-		{name: "店铺品牌覆盖", storeID: "belugaworkshop_006", mapKey: "level_002_kirzah_river", want: 0.85},
+		{name: "同图店铺品牌覆盖", storeID: "belugaworkshop_006", mapKey: "level_006_ladoga", want: 0.85},
+		{name: "跨图低价店不改倍率", storeID: "workshop_02", mapKey: "level_001_lake", want: 1.0},
+		{name: "跨图品牌店不改倍率", storeID: "zeiman_workshop_014", mapKey: "level_001_lake", want: 1.0},
 		{name: "未知店铺走当前图", storeID: "unknown_store", mapKey: "level_002_kirzah_river", want: 0.85},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := repairMultForMap(tc.mapKey, tc.brands)
 			if tc.storeID != "" {
-				got = repairMultiplierForStore(tc.storeID, tc.mapKey)
+				got = repairMultiplierForLocation(tc.storeID, tc.mapKey)
 			}
 			if math.Abs(got-tc.want) > 1e-9 {
 				t.Fatalf("mult=%v want %v", got, tc.want)
 			}
 		})
 	}
-	if got := repairCost(1, false, 0.5, repairMultiplierForStore("workshop_02", "level_001_lake")); got != 128 {
-		t.Fatalf("惟有诺克河 1 槽半磨损修理费=%d want 128", got)
+	if got := repairCost(1, false, 0.5, repairMultiplierForLocation("workshop_02", "level_002_kirzah_river")); got != 64 {
+		t.Fatalf("惟有诺克河 1 个零件半磨损修理费=%d want 64", got)
 	}
 }
 
-// TestWorkshopRepairFallbackUsesStoreMapAndBrand 21/3 在客户端报价=0 时，
-// fallback 必须走店铺所属地图/品牌倍率，而不是恒定 1.0。
-func TestWorkshopRepairFallbackUsesStoreMapAndBrand(t *testing.T) {
+// TestWorkshopRepairIgnoresRequestStoreName 21/3 的修理费只按玩家当前地图计价：
+// 请求里的店铺名（低价图、跨图品牌店或未知店铺）不能改变扣费。
+func TestWorkshopRepairIgnoresRequestStoreName(t *testing.T) {
 	t.Parallel()
 	srv, db := newEconomyTxTestServer(t)
 	ctx0 := context.Background()
@@ -430,29 +434,37 @@ func TestWorkshopRepairFallbackUsesStoreMapAndBrand(t *testing.T) {
 	if err := srv.EnsurePlayer(ctx0, uid); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.UpdateBalance(ctx0, uid, 100000, 0, 0); err != nil {
+		t.Fatal(err)
+	}
 	guids, err := db.ItemGUIDsByContainers(ctx0, uid, []string{"backpack", "rig"})
-	if err != nil || len(guids) < 3 {
+	if err != nil || len(guids) == 0 {
 		t.Skipf("测试角色可修物品不足: n=%d err=%v", len(guids), err)
 	}
-	cases := []struct {
-		store string
-		want  int64
-	}{
-		{store: "workshop_viiveri", want: 300}, // level_003_viiveri_lake ×2.00
-		{store: "workshop_02", want: 128},      // 惟有诺克河 ×0.85，300×0.5×0.85=127.5→128
-		{store: "workshop_01", want: 150},      // level_001_lake ×1.00
-	}
-	for i, tc := range cases {
-		guid := guids[i]
+	guid := guids[0]
+	// 玩家停在出生图（×1.00），扣费只取决于物品的真实零件数。
+	var want int64
+	for _, store := range []string{"workshop_viiveri", "workshop_02", "workshop_01", "no_such_store"} {
 		if err := db.SetItemDurability(ctx0, guid, 0.5); err != nil {
 			t.Fatal(err)
+		}
+		if want == 0 {
+			row, rerr := db.GetItemByGUID(ctx0, guid)
+			if rerr != nil || row == nil {
+				t.Fatalf("读物品失败: %v", rerr)
+			}
+			parts := len(srv.repairPartsOf(ctx0, row))
+			if parts < 1 {
+				parts = 1
+			}
+			want = repairCost(parts, false, 0.5, repairMultiplierForLocation("", spawnLevelKey))
 		}
 		before, err := db.GetProfile(ctx0, uid)
 		if err != nil {
 			t.Fatal(err)
 		}
 		req := proto.Args524(
-			proto.StrVal(tc.store),
+			proto.StrVal(store),
 			proto.Guid(guid),
 			proto.U32Arr([]uint32{1}),
 		)
@@ -461,14 +473,14 @@ func TestWorkshopRepairFallbackUsesStoreMapAndBrand(t *testing.T) {
 			Main: 21, Sub: 3, Tree: req, DecodeOK: true, Log: logging.Discard(),
 		})
 		if !ok || len(body) == 0 {
-			t.Fatalf("%s 21/3 fallback 未处理", tc.store)
+			t.Fatalf("%s 21/3 fallback 未处理", store)
 		}
 		after, err := db.GetProfile(ctx0, uid)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := before.Silver - after.Silver; got != tc.want {
-			t.Fatalf("%s fallback 扣费=%d want %d", tc.store, got, tc.want)
+		if got := before.Silver - after.Silver; got != want {
+			t.Fatalf("店铺 %q 的扣费=%d，期望按当前地图计价 %d", store, got, want)
 		}
 	}
 }
@@ -553,6 +565,16 @@ func TestRepairFlow(t *testing.T) {
 	if err := db.SetItemDurability(ctx, guid, 0.5); err != nil {
 		t.Fatal(err)
 	}
+	// 服务端按物品树里的可修零件数计价，期望值用同一份事实推算。
+	partsRow, rerr := db.GetItemByGUID(ctx, guid)
+	if rerr != nil || partsRow == nil {
+		t.Fatalf("读物品失败: %v", rerr)
+	}
+	parts := len(srv.repairPartsOf(ctx, partsRow))
+	if parts < 1 {
+		parts = 1
+	}
+	wantCost := repairCost(parts, false, 0.5, repairMultiplierForLocation("", spawnLevelKey))
 	p0, _ := db.EnsureProfile(ctx, 1000001)
 	silver0 := p0.Silver
 
@@ -600,15 +622,15 @@ func TestRepairFlow(t *testing.T) {
 	if !foundRepairLog {
 		t.Fatalf("缺少修理历史: %+v", damageLogs)
 	}
-	// 按服务端价格扣费：0.5 磨损、1 槽、workshop_01 倍率 1.0。
+	// 按服务端价格扣费：0.5 磨损、真实零件数、出生图倍率 1.0。
 	p1, _ := db.EnsureProfile(ctx, 1000001)
-	if p1.Silver != silver0-150 {
-		t.Fatalf("应按服务端价格扣 150 银： %d -> %d", silver0, p1.Silver)
+	if got := silver0 - p1.Silver; got != wantCost {
+		t.Fatalf("应按服务端价格扣 %d 银，实际扣 %d： %d -> %d", wantCost, got, silver0, p1.Silver)
 	}
 	var txnN int64
 	if err := db.SQL.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM txn WHERE uid=? AND kind=? AND silver_delta=?`,
-		int64(1000001), "repair", -150).Scan(&txnN); err != nil {
+		int64(1000001), "repair", -wantCost).Scan(&txnN); err != nil {
 		t.Fatalf("txn 查询失败: %v", err)
 	}
 	if txnN != 1 {

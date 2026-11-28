@@ -315,11 +315,13 @@ func (d *DB) NamedFishIsNamed(ctx context.Context, fishID string) bool {
 	return err == nil && nf != nil
 }
 
-// NamedFishNoteRecatch 将被命名鱼的钓获次数加一。
-func (d *DB) NamedFishNoteRecatch(ctx context.Context, fishID string) {
+// NamedFishNoteRecatch 将被命名鱼的钓获次数加一。计数是展示用统计，
+// 写库失败返回错误由调用方告警，不阻断放生主流程。
+func (d *DB) NamedFishNoteRecatch(ctx context.Context, fishID string) error {
 	if fishID == "" {
-		return
+		return nil
 	}
-	_, _ = d.SQL.ExecContext(ctx,
+	_, err := d.SQL.ExecContext(ctx,
 		`UPDATE named_fish SET catches = catches + 1 WHERE fish_id=?`, fishID)
+	return err
 }

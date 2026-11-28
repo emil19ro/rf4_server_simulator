@@ -27,7 +27,7 @@ gateway:
   region: "EN"                        # 客户端区域值；EN 时 game.language 自动为 en。
   server_name: "RF4_566"              # 登录应答中返回的服务器名称。
   login_domain: "api.rf4game.ru"      # 主登录域名及证书主题。
-  max_conns: 512                      # realtime 最大并发连接数。
+  max_conns: 512                      # realtime 最大并发连接数；须在 1..100000 之间，超出范围会拒绝启动。
   ack_client_frames: true             # 处理客户端帧前先发送协议 ACK。
   transport_keepalive_sec: 5.0        # 空传输帧保活间隔（秒）。
   obs_addr: ":9501"                   # 健康检查、指标和性能分析监听地址。
@@ -57,7 +57,7 @@ game:
     cycle_days: 64                    # 每图序列天数，最小 8。
 
 admin:
-  http_addr: ":8080"                          # 仅 cmd/admin 独立调试使用；launcher 不监听此端口。
+  http_addr: "127.0.0.1:8080"                 # 独立管理后台的监听地址；默认只绑本机，需要局域网访问时改成 ":8080"。launcher 不监听此端口。
   jwt_secret: "replace-with-long-random-secret"  # 管理员会话 token 的签名密钥。
   obs_addr: ":9503"                           # 仅 cmd/admin 独立调试使用。
   username: "admin"                           # 管理员用户名。

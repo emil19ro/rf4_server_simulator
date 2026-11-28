@@ -61,6 +61,9 @@ func EncodeValue(v *Value, table *OpsTable) ([]byte, error) {
 			return nil, err
 		}
 		out = append(out, sb...)
+		if len(v.Pairs) > 0xFF {
+			return nil, errAt("encode", "dict", "too many entries", len(v.Pairs))
+		}
 		out = append(out, PackU8(uint32(len(v.Pairs)))...)
 		for _, p := range v.Pairs {
 			kb, err := PackShortStr(p.K)
@@ -83,6 +86,9 @@ func EncodeValue(v *Value, table *OpsTable) ([]byte, error) {
 			return nil, err
 		}
 		out = append(out, cb...)
+		if len(v.Items) > 0xFFFF {
+			return nil, errAt("encode", "args", "too many entries", len(v.Items))
+		}
 		out = append(out, PackU16(uint32(len(v.Items)))...)
 		for _, it := range v.Items {
 			b, err := EncodeValue(it, table)
@@ -95,6 +101,9 @@ func EncodeValue(v *Value, table *OpsTable) ([]byte, error) {
 
 	case KindArray:
 		out := []byte{0x04}
+		if len(v.Items) > 0xFFFF {
+			return nil, errAt("encode", "array", "too many entries", len(v.Items))
+		}
 		out = append(out, PackU16(uint32(len(v.Items)))...)
 		for _, it := range v.Items {
 			if it == nil || it.IsNull {
@@ -112,6 +121,9 @@ func EncodeValue(v *Value, table *OpsTable) ([]byte, error) {
 
 	case KindU32Arr:
 		out := []byte{0x05}
+		if len(v.Items) > 0xFFFF {
+			return nil, errAt("encode", "u32arr", "too many entries", len(v.Items))
+		}
 		out = append(out, PackU16(uint32(len(v.Items)))...)
 		for _, it := range v.Items {
 			out = append(out, PackU32(uint32(it.Num))...)
@@ -120,6 +132,9 @@ func EncodeValue(v *Value, table *OpsTable) ([]byte, error) {
 
 	case KindGuidArr:
 		out := []byte{0x06}
+		if len(v.Items) > 0xFFFF {
+			return nil, errAt("encode", "guidarr", "too many entries", len(v.Items))
+		}
 		out = append(out, PackU16(uint32(len(v.Items)))...)
 		for _, it := range v.Items {
 			raw, err := hexDecode(it.Hex)
@@ -138,6 +153,9 @@ func EncodeValue(v *Value, table *OpsTable) ([]byte, error) {
 			return nil, err
 		}
 		out = append(out, tb...)
+		if len(v.Items) > 0xFFFF {
+			return nil, errAt("encode", "typed_u32arr", "too many entries", len(v.Items))
+		}
 		out = append(out, PackU16(uint32(len(v.Items)))...)
 		for _, it := range v.Items {
 			out = append(out, PackU32(uint32(it.Num))...)
@@ -232,6 +250,9 @@ func EncodeValue(v *Value, table *OpsTable) ([]byte, error) {
 			return nil, err
 		}
 		out = append(out, tb...)
+		if len(v.Items) > 0xFFFF {
+			return nil, errAt("encode", "typedarr", "too many entries", len(v.Items))
+		}
 		out = append(out, PackU16(uint32(len(v.Items)))...)
 		for _, e := range v.Items {
 			eb, err := EncodeValue(e, table)

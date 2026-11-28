@@ -88,8 +88,8 @@ func TestCat58StackCountUsesCsQty(t *testing.T) {
 		t.Fatalf("alignItemRowQty 后 item.qty = %d，期望按 csQty 收敛到 95", row.Qty)
 	}
 
-	if got := srv.consumeItemQty(ctx, row, 1); got != 1 {
-		t.Fatalf("consumeItemQty 返回 %d，期望 1", got)
+	if got, cerr := srv.consumeItemQtyErr(ctx, row, 1); cerr != nil || got != 1 {
+		t.Fatalf("consumeItemQtyErr 返回 %d（err=%v），期望 1 且无错误", got, cerr)
 	}
 	after, err := db.GetItemByGUID(ctx, row.GUID)
 	if err != nil {

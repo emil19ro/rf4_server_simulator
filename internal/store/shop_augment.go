@@ -276,8 +276,9 @@ func (d *DB) augmentShopShelf(ctx context.Context, def shopStoreDefinition, shel
 				cp.Silver = shopBookSilverPrice
 				cp.Gold = shopBookGoldPrice
 			}
+			// 补齐商品同样只补展示库存，见 shopShelfRestockStock。
 			if cp.Stock <= 0 {
-				cp.Stock = 1000
+				cp.Stock = shopShelfRestockStock
 			}
 			add = append(add, &cp)
 			continue
@@ -299,7 +300,7 @@ func (d *DB) augmentShopShelf(ctx context.Context, def shopStoreDefinition, shel
 		}
 		// 价格随机上浮 0~10%（按 item_id 稳定，不会每次刷新都变）
 		silver = silver + silver*int64(stableHash(id)%11)/100
-		add = append(add, &ShopPrice{ItemID: id, Silver: silver, Stock: 1000})
+		add = append(add, &ShopPrice{ItemID: id, Silver: silver, Stock: shopShelfRestockStock})
 	}
 	if len(add) == 0 {
 		return shelf, 0, nil

@@ -54,8 +54,9 @@ Copy-Item config.example.yaml config.yaml
 - 将 `gateway.advertise_host` 设置为客户端可用于实时连接的地址。
 - 将 `gateway.login_domain` 设置为主登录主机名。生成的证书会覆盖该名称、`localhost` 和 `127.0.0.1`。
 - 为 `gateway.tunnel.psk` 和 `game.tunnel.psk` 设置相同的非空值。
-- 在将服务开放到任何网络之前，替换 `admin.jwt_secret`、`admin.password` 和隧道 PSK。
+- 在将服务开放到任何网络之前，替换 `admin.jwt_secret`、`admin.password` 和隧道 PSK；管理后台凭据或密钥未替换时启动日志和管理后台总览会给出告警，隧道 PSK 需自行确认已替换。
 - 保持 `sqlite.static_path` 指向随附的 `server_data/static.sqlite3`。
+- `gateway.max_conns` 是 realtime 最大并发连接数，允许 1..100000；不配置时使用默认值 512，0、负数或超上限会在启动时报错。
 
 `config.yaml` 已被 `.gitignore` 排除。配置加载器支持 `config.example.yaml` 中说明的 `RF4_*` 覆盖项。
 
@@ -117,7 +118,7 @@ bin\gateway.exe -config config.yaml
 
 手动运行这两个进程不会启动管理控制台；管理控制台随 `launcher` 的 9500 统一入口提供。
 
-Windows 发布包默认本地开发凭据为 `admin` / `admin123`；源码部署使用配置中的管理员凭据。对于任何未与本地计算机隔离的环境，请在 `config.yaml` 中替换凭据和密钥。
+Windows 发布包默认本地开发凭据为 `admin` / `admin123`；源码部署使用配置中的管理员凭据。默认凭据与默认 `admin.jwt_secret` 只适用于本机：独立管理后台的 `admin.http_addr` 默认绑定 `127.0.0.1:8080`，确需局域网访问时才显式改成 `:8080`。对于任何未与本地计算机隔离的环境，请在 `config.yaml` 中替换凭据和密钥。
 
 ## 部署后自证版本
 

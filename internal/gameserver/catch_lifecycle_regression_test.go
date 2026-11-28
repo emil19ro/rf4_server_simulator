@@ -105,7 +105,7 @@ func TestCatchAndReleaseLevelUpGrantsOfficialGifts(t *testing.T) {
 	if _, err := db.SQL.Exec(`UPDATE profile SET level=9,xp=?,gold=1234 WHERE uid=?`, baseXp(10)-1, uid); err != nil {
 		t.Fatal(err)
 	}
-	rel, relGifts, replayed, err := s.releaseCatchOnce(t.Context(), uid, fish.FishGUID, 10, 1)
+	rel, relGifts, replayed, err := s.releaseCatchOnce(t.Context(), uid, fish.FishGUID, 10, 1, fish.Grade)
 	if err != nil || replayed || rel.Level < 10 {
 		t.Fatalf("release level-up failed: %+v replayed=%v %v", rel, replayed, err)
 	}
@@ -302,7 +302,7 @@ func TestLevel11GiftVariesByRigType(t *testing.T) {
 	}
 	// 放生一尾路亚（rigType=5）钓上来的鱼把玩家送进 11 级 → 路亚套，
 	// 礼物行随放生结果返回（放生路径无奖励列表，靠 4/22 同步背包）。
-	rel, gifts, replayed, err := s.releaseCatchOnce(t.Context(), uid, strings.Repeat("a", 32), 10, 5)
+	rel, gifts, replayed, err := s.releaseCatchOnce(t.Context(), uid, strings.Repeat("a", 32), 10, 5, 2)
 	if err != nil || replayed || rel.Level < 11 {
 		t.Fatalf("spin release level 11 failed: %+v replayed=%v %v", rel, replayed, err)
 	}

@@ -262,7 +262,7 @@ func (s *Server) settleCatchOnceWithQualification(ctx context.Context, uid int64
 	// 14/5 入护只把这行的 source 从 'catch' 抬成 'keep'（见 KeepFishingCatchWithCapacity），
 	// 14/6 放生保持 'catch'：钓到过就是钓到过，图鉴、307.f16 星号、3/17 面板与
 	// 321 统计因此都不再区分放生与入护。
-	if err := insertCatchLogSettleTx(ctx, tx, uid, f, locLevel, catchLoc, catchSpot, bait,
+	if err := s.insertCatchLogSettleTx(ctx, tx, uid, f, locLevel, catchLoc, catchSpot, bait,
 		tackleCatForRig(rigType), xp, silver, now); err != nil {
 		return nil, err
 	}
@@ -369,14 +369,21 @@ func catchBaitItem(f *RolledFish, fallback string) string {
 // 只把同一行的 source 抬成 'keep'（见 KeepFishingCatchWithCapacity），14/6 放生
 // 保持 'catch'。唯一索引 uq_catch_log_fish_identity(uid, source, catch_guid)
 // 保证重放不会重复记账；结算本身还有 catch-settlement 回执兜底。
-func insertCatchLogSettleTx(ctx context.Context, tx *sql.Tx, uid int64, f *RolledFish,
+func (s *Server) insertCatchLogSettleTx(ctx context.Context, tx *sql.Tx, uid int64, f *RolledFish,
 	locLevel, loc string, spot int64, bait string, tackleCat, xp, silver int64, ts float64) error {
 	if tx == nil || f == nil || f.FishGUID == "" || f.Species == "" {
 		return nil
 	}
+	// hook 只是统计维度：钩子行不存在（sql.ErrNoRows）属于合法情况，留空串；
+	// 其它错误记 warn 后继续，不为一个统计字段回滚整笔结算。
 	hookItem := ""
 	if f.HookGUID != "" {
-		_ = tx.QueryRowContext(ctx, `SELECT item_id FROM item WHERE guid=?`, f.HookGUID).Scan(&hookItem)
+		if err := tx.QueryRowContext(ctx, `SELECT item_id FROM item WHERE guid=?`, f.HookGUID).Scan(&hookItem); err != nil {
+			if err != sql.ErrNoRows {
+				s.log.Warn("钓获记录钩子查询失败，hook 留空", "uid", uid, "fish", shortGUID(f.FishGUID), "err", err)
+			}
+			hookItem = ""
+		}
 	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO catch_log(
 		ts,loc,spot,fish_key,name_zh,weight_g,length_m,source,bait,grade,xp,silver,loc_level,uid,catch_guid,tackle_cat,hook)

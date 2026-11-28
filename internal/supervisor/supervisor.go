@@ -39,6 +39,10 @@ const (
 	maxConsecFails = 5
 )
 
+// ErrUnknownProcess 未知进程名。StartOne/StopOne/RestartOne 都用它包一层返回，
+// 调用方（HTTP 路由）据此回 4xx，而不是把用户输入错误当成服务端故障回 500。
+var ErrUnknownProcess = errors.New("未知进程")
+
 // Spec 一个受管进程的定义。
 type Spec struct {
 	Name     string // gameserver / gateway
@@ -214,7 +218,7 @@ func (s *Supervisor) StartOne(name string) error {
 	p := s.procs[name]
 	if p == nil {
 		s.mu.Unlock()
-		return fmt.Errorf("未知进程 %s", name)
+		return fmt.Errorf("%w: %s", ErrUnknownProcess, name)
 	}
 	if p.state == StateRunning || p.state == StateStarting {
 		s.mu.Unlock()
@@ -225,7 +229,9 @@ func (s *Supervisor) StartOne(name string) error {
 	s.mu.Unlock()
 
 	if err := s.launch(p); err != nil {
+		s.mu.Lock() // state 由 s.mu 保护，Status 会在锁内读
 		p.state = StateFailed
+		s.mu.Unlock()
 		s.slogf("launch %s 失败: %v", name, err)
 		s.notify()
 		return err
@@ -261,16 +267,17 @@ func (s *Supervisor) launch(p *proc) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	// 这些字段都由 s.mu 保护（Status/supervise/StopOne 都持锁读写），
+	// 新进程刚起来时的第一次 Status 快照必须拿到完整一致的一组值。
+	s.mu.Lock()
 	p.cmd = cmd
 	p.pid = cmd.Process.Pid
 	p.state = StateRunning
 	p.startedAt = time.Now()
 	p.exeSize = fi.Size()
 	p.exeMod = fi.ModTime()
-	p.buildMu.Lock()
-	p.build = nil // 新进程，旧的身份作废
-	p.buildRead = time.Time{}
-	p.buildMu.Unlock()
+	s.clearBuild(p) // 新进程，旧的身份作废；锁顺序 s.mu → p.buildMu
+	s.mu.Unlock()
 	p.logf("[%s] 已启动 pid=%d", p.spec.Name, p.pid)
 
 	go func() {
@@ -341,13 +348,14 @@ func (s *Supervisor) supervise(p *proc) {
 	}
 }
 
-// StopOne 停止单个进程（显式停止，不自动重启）。
-func (s *Supervisor) StopOne(name string) {
+// StopOne 停止单个进程（显式停止，不自动重启）。未知进程名返回错误，
+// 与 StartOne/RestartOne 行为一致，调用方可据此回错误而不是静默成功。
+func (s *Supervisor) StopOne(name string) error {
 	s.mu.Lock()
 	p := s.procs[name]
 	if p == nil {
 		s.mu.Unlock()
-		return
+		return fmt.Errorf("%w: %s", ErrUnknownProcess, name)
 	}
 	p.stopReq = true
 	s.clearBuild(p) // 停止指令已下达，不再对外报旧身份
@@ -356,6 +364,7 @@ func (s *Supervisor) StopOne(name string) {
 		p.logf("[%s] 收到停止指令", name)
 		_ = p.cmd.Process.Kill() // SQLite WAL 下安全；硬杀避免 Windows 信号复杂性
 	}
+	return nil
 }
 
 // StopAll 停止全部（退出用）。
@@ -364,7 +373,7 @@ func (s *Supervisor) StopAll() {
 	s.stopping = true
 	s.mu.Unlock()
 	for _, name := range s.order {
-		s.StopOne(name)
+		_ = s.StopOne(name)
 	}
 	// 等待全部落定（最多 10s）
 	deadline := time.Now().Add(10 * time.Second)
@@ -382,17 +391,32 @@ func (s *Supervisor) StopAll() {
 	}
 }
 
-// RestartOne 重启单个进程。
+// RestartOne 重启单个进程。未知进程名返回错误，不 panic。
 func (s *Supervisor) RestartOne(name string) error {
-	s.StopOne(name)
+	if err := s.StopOne(name); err != nil { // 未知进程名在这里就返回，不进等待循环
+		return err
+	}
+	// 等待停止落定。状态只经 procState 在 s.mu 下读：锁外直接解引用
+	// s.procs[name].state 既会对未知名字 nil 解引用，也与 supervise 的状态写入竞争。
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
-		if s.procs[name].state == StateStopped {
+		if s.procState(name) == StateStopped {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	return s.StartOne(name)
+}
+
+// procState 在 s.mu 下读进程状态。p.state 由 s.mu 保护，锁外直接读会与
+// supervise/StopOne/launch 的状态写入构成数据竞争；未知进程名返回空串。
+func (s *Supervisor) procState(name string) ProcState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p := s.procs[name]; p != nil {
+		return p.state
+	}
+	return ""
 }
 
 // LastError StartAll 最近错误（空=无）。

@@ -114,7 +114,12 @@ func (s *Server) handleHookProfileSave(w http.ResponseWriter, r *http.Request) {
 		httpError(w, 500, err.Error())
 		return
 	}
-	_ = s.db.AuditLogWrite(r.Context(), adminOf(r), "hook_profile", req.ItemID, mustJSON(req))
-	_ = s.db.QueuePush(r.Context(), mustJSON(map[string]any{"op": "reload_tunables"}))
+	aw := adminWrite{admin: adminOf(r)}
+	aw.markBusinessApplied()
+	aw.audit("hook_profile", req.ItemID, mustJSON(req))
+	aw.push(mustJSON(map[string]any{"op": "reload_tunables"}))
+	if !s.commitAdmin(r.Context(), w, aw) {
+		return
+	}
 	writeJSON(w, map[string]any{"ok": true})
 }

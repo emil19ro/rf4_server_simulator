@@ -165,7 +165,7 @@ type vendCharge struct {
 // 需求带显式 item_id 直接采用；类别/标签需求取客户端材料槽 f2 提交的
 // 具体物品（craftSlot.Species 承载，实抓 2026-11-09：槽 = {需求id, 临时GUID,
 // 具体item id}），槽序即需求序，已认领的槽不复用；类别可校验则校验，
-// 标签沿用既有"无法反查、忽略"口径（见 consumeByDemand）。
+// 标签组服务端无法从标签反查具体物品，沿用既有"忽略"口径。
 func (s *Server) resolveVendCharges(ctx context.Context, demands []craftDemand, slots []craftSlot) ([]vendCharge, error) {
 	used := make([]bool, len(slots))
 	out := make([]vendCharge, 0, len(demands))
@@ -1286,134 +1286,16 @@ func (s *Server) hasMaterials(ctx context.Context, uid int64, ms []craftDemand) 
 	return true
 }
 
-// consumeMaterials 按需求扣除背包材料，支持 alternatives，并优先扣 item_id。
-// 可堆叠材料按份扣除；返回被修改的 GUID 列表。
-func (s *Server) consumeMaterials(ctx context.Context, uid int64, ms []craftDemand) []string {
-	rows, err := s.DB.ListItemsByContainers(ctx, uid, []string{"backpack", "rig"})
-	if err != nil {
-		return nil
-	}
-	touched := []string{}
-	for _, m := range ms {
-		need := m.need()
-		for _, accept := range demandAccepts(m) {
-			if need <= 0 {
-				break
-			}
-			for _, it := range rows {
-				if need <= 0 {
-					break
-				}
-				if it.ItemID != accept {
-					continue
-				}
-				take := need
-				if cnt := s.stackCountOf(ctx, it); cnt > 0 && cnt < take {
-					take = cnt // min(need, 该堆现有份数)
-				}
-				got := s.consumeItemQty(ctx, it, take)
-				need -= got
-				if got > 0 && !containsGUID(touched, it.GUID) {
-					touched = append(touched, it.GUID)
-				}
-			}
-		}
-	}
-	return touched
-}
-
-// consumeDeclared 按客户端提交的材料槽扣除。槽位 f0 是需求 id，f1 是实例 GUID。
-// 临时 GUID 无法在背包中定位时，再按需求 id 查找可用材料。
-func (s *Server) consumeDeclared(ctx *Ctx, cctx context.Context, uid int64, slots []craftSlot, demands []craftDemand) []string {
-	byDemand := map[string]craftDemand{}
-	for _, d := range demands {
-		if d.DemandID != "" {
-			byDemand[d.DemandID] = d
-		}
-	}
-	rows, _ := s.DB.ListItemsByContainers(cctx, uid, []string{"backpack", "rig"})
-	byGUID := map[string]*store.Item{}
-	for _, it := range rows {
-		byGUID[it.GUID] = it
-	}
-	touched := []string{}
-	var missing []string
-	for _, sl := range slots {
-		g := sl.GUID
-		if g == "" {
-			continue
-		}
-		if row, ok := byGUID[g]; ok {
-			if s.consumeItemQty(cctx, row, 1) > 0 && !containsGUID(touched, g) {
-				touched = append(touched, g)
-			}
-			continue
-		}
-		if demand, ok := byDemand[sl.ItemID]; ok {
-			if hit := s.consumeByDemand(cctx, uid, demand); hit != "" {
-				if !containsGUID(touched, hit) {
-					touched = append(touched, hit)
-				}
-				continue
-			}
-		}
-		missing = append(missing, fmt.Sprintf("%s/%s", sl.ItemID, shortGUID(g)))
-	}
-	if len(missing) > 0 {
-		ctx.Log.Warn("9/1 材料槽有物品既不在背包、也无法按需求类目定位（仍放行产出）",
-			"missing", missing)
-	}
-	return touched
-}
-
-// consumeByDemand 按一条需求的可接受类别/备选 item id 在背包里扣 1 份
-// （9_1._consume_by_demand）。返回被扣物品的 guid；没扣到返回 ""。
-func (s *Server) consumeByDemand(ctx context.Context, uid int64, d craftDemand) string {
-	alts := make([]string, 0, len(d.Alternatives))
-	for _, a := range d.Alternatives {
-		if a != "" {
-			alts = append(alts, a)
-		}
-	}
-	cats := map[int64]bool{}
-	for _, c := range d.Categories {
-		cats[c] = true
-	}
-	rows, _ := s.DB.ListItemsByContainers(ctx, uid, []string{"backpack", "rig"})
-	for _, it := range rows {
-		iid := it.ItemID
-		switch {
-		case len(alts) > 0:
-			if !containsStr(alts, iid) {
-				continue
-			}
-		case len(cats) > 0:
-			// effectiveCategory 与 class_for_item 同一口径（套盒解包到内含物）
-			realCat, ok := s.effectiveCategory(ctx, iid)
-			if !ok || !cats[realCat] {
-				continue
-			}
-		default:
-			// 只有标签组（gfhgeippgdj）：服务端无法从标签反查物品，交给下一条
-			return ""
-		}
-		if s.consumeItemQty(ctx, it, 1) > 0 {
-			ctxLog := s.log
-			ctxLog.Info("9/1 材料按需求类目扣除", "item", iid, "demand", d.DemandID)
-			return it.GUID
-		}
-	}
-	return ""
-}
-
-// consumeItemQty 从实例中按份扣除 n，返回实际扣除数量。
+// consumeItemQtyErr 从实例中按份扣除 n，返回实际扣除数量。
 //
 // 可堆叠物品的数量同时保存在 item.qty 和 ljnnpokapig 字段中，两处必须同步。
 // 数量降至 0 或不足时删除整件及其 container_slot、rig_component 关联。
 // 当前数量以 stackCountOf 为准，无字段时回退到定义值。
-func (s *Server) consumeItemQty(ctx context.Context, row *store.Item, n int64) int64 {
+// 写库失败返回 0 和错误，且不改内存行：调用方必须中止本次动作，不能当作已扣除。
+// 需要与后续记账同生共死时改用 consumeItemQtyTx。
+func (s *Server) consumeItemQtyErr(ctx context.Context, row *store.Item, n int64) (int64, error) {
 	if row == nil || row.GUID == "" {
-		return 0
+		return 0, errors.New("缺少待扣除的物品实例")
 	}
 	have := s.stackCountOf(ctx, row)
 	if have < 1 {
@@ -1425,28 +1307,35 @@ func (s *Server) consumeItemQty(ctx context.Context, row *store.Item, n int64) i
 	}
 	if have <= take {
 		if err := s.DB.DeleteItemCascade(ctx, row.GUID); err != nil {
-			return 0
+			return 0, err
 		}
 		row.Qty = 0
-		return have
+		return have, nil
 	}
 	left := have - take
-	if fields, err := FieldsFromJSON(row.FieldsJSON); err == nil && len(fields) > 0 {
+	fields, ferr := FieldsFromJSON(row.FieldsJSON)
+	if ferr == nil && len(fields) > 0 {
 		// set_item_fields 路径：改 ljnnpokapig + qty 镜像列 + 抬版本戳
 		if q := stackQtyFieldIdx(row.WireClass); q >= 0 && q < len(fields) {
 			fields[q].Num = ptrU64(uint64(left))
 		}
 		bumpCreatedTicks(fields, row.WireClass)
-		if fj, jerr := FieldsToJSON(fields); jerr == nil {
-			_ = s.DB.UpdateItemFields(ctx, row.GUID, fj, left, row.Durability, row.Workmanship, row.RigGUID)
-			row.FieldsJSON = fj
+		fj, jerr := FieldsToJSON(fields)
+		if jerr != nil {
+			return 0, jerr
 		}
+		if err := s.DB.UpdateItemFields(ctx, row.GUID, fj, left, row.Durability, row.Workmanship, row.RigGUID); err != nil {
+			return 0, err
+		}
+		row.FieldsJSON = fj
 	} else {
 		// set_item_qty 路径：退化行只更 qty 列（不动 fields_json）
-		_ = s.DB.UpdateItemQty(ctx, row.GUID, left)
+		if err := s.DB.UpdateItemQty(ctx, row.GUID, left); err != nil {
+			return 0, err
+		}
 	}
 	row.Qty = left
-	return take
+	return take, nil
 }
 
 // effectiveCategory 物品的有效类别（shop_rules._effective 的类别半边：
