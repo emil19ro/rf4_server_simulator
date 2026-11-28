@@ -56,6 +56,9 @@ type Server struct {
 
 	// 数据库名称英文字典缓存（见 names.go）。
 	names namesCache
+
+	// 内嵌前端根；handleIndexPage 用它渲染语言页面壳（i18n）。
+	webFS fs.FS
 }
 
 type plog struct{ l logger }
@@ -75,7 +78,7 @@ const (
 // NewServer 构建管理后台（webFS 为内嵌前端，nil 时只有 API）。
 // 运行时指令写入共享 SQLite 队列，由 gameserver 轮询消费。
 func NewServer(cfg config.Admin, db *store.DB, log logger, webFS fs.FS) *Server {
-	s := &Server{cfg: cfg, db: db, log: &plog{l: log}, jwtKey: []byte(cfg.JWTSecret)}
+	s := &Server{cfg: cfg, db: db, log: &plog{l: log}, jwtKey: []byte(cfg.JWTSecret), webFS: webFS}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/login", s.handleLogin)
 
@@ -142,6 +145,8 @@ func NewServer(cfg config.Admin, db *store.DB, log logger, webFS fs.FS) *Server 
 	// 物品与鱼种图标同理由 ref/ 运行时加载（见 item_icons.go）。
 	mux.Handle("GET /icons/", http.HandlerFunc(s.handleIcons))
 	if webFS != nil {
+		// 页面壳（上游 renderIndex）与英文注入都在 webHandler 里（见 i18n.go）。
+		s.webFS = webFS
 		mux.Handle("/", s.webHandler(webFS))
 	}
 	s.mux = mux

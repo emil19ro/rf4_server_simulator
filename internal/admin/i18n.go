@@ -78,7 +78,7 @@ func (s *Server) webHandler(webFS fs.FS) http.Handler {
 			_, _ = w.Write(s.namesScript(r.Context()))
 			return
 		}
-		if r.URL.Path != "/" && r.URL.Path != "" {
+		if r.URL.Path != "/" && r.URL.Path != "" && r.URL.Path != "/index.html" {
 			files.ServeHTTP(w, r)
 			return
 		}
@@ -87,9 +87,43 @@ func (s *Server) webHandler(webFS fs.FS) http.Handler {
 			files.ServeHTTP(w, r)
 			return
 		}
+		lang, fromQuery := PageLang(r, s.lang)
+		if fromQuery {
+			http.SetCookie(w, &http.Cookie{
+				Name: "lang", Value: lang, Path: "/", MaxAge: langCookieMaxAge, SameSite: http.SameSiteLaxMode,
+			})
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
-		page := injectBeforeHead(index, ThemeBootScript(false))
-		_, _ = w.Write(injectBeforeBody(page, i18nScripts(s.lang)))
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Vary", "Cookie")
+		page := injectBeforeHead(renderIndex(index, lang), append(ThemeBootScript(false), adminLangSwitchCSS...))
+		_, _ = w.Write(injectBeforeBody(page, i18nScripts(lang)))
 	})
 }
+
+// PageLang 页面语言：?lang= > cookie lang > 默认语言（game.language）。
+// 上游 langFromRequest 在没有参数和 cookie 时看 Accept-Language 再回退中文；
+// 本仓以配置的 game.language 为准，免得英文服在中文/其它语言浏览器里默认成中文。
+// 后台与控制面板共用（同一个 cookie）。
+func PageLang(r *http.Request, def string) (string, bool) {
+	if v := r.URL.Query().Get("lang"); isLang(v) {
+		return v, true
+	}
+	if c, err := r.Cookie("lang"); err == nil && isLang(c.Value) {
+		return c.Value, false
+	}
+	if def == config.LanguageEN {
+		return config.LanguageEN, false
+	}
+	return config.LanguageZH, false
+}
+
+// adminLangSwitchCSS 上游 renderIndex 把 #lang-switch 插在 <body> 开头，后台 body 是两列网格，
+// 无样式时会占掉一格把整页挤歪；固定在右下角（原 EN/中文 按钮的位置）就脱离网格。
+var adminLangSwitchCSS = []byte(`<style>
+#lang-switch{position:fixed;right:14px;bottom:14px;z-index:2147483000;display:flex;gap:4px;padding:4px;border-radius:999px;
+border:1px solid rgba(127,127,127,.45);background:rgba(20,24,30,.85);font:600 12px/1.2 system-ui,sans-serif}
+#lang-switch a{color:#cfd6df;text-decoration:none;padding:3px 9px;border-radius:999px}
+#lang-switch a[aria-current=true]{color:#fff;background:rgba(255,255,255,.16)}
+</style>
+`)

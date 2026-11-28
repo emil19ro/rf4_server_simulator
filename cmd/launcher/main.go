@@ -133,9 +133,18 @@ func main() {
 		http.Redirect(w, r, "/admin/", http.StatusTemporaryRedirect)
 	})
 	mux.HandleFunc("/api/admin/retry", app.handleAdminRetry)
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// 页面壳按语言改写：?lang= > cookie lang > game.language（admin.PageLang）
+		lang, fromQuery := admin.PageLang(r, app.cfg.Game.Language)
+		if fromQuery {
+			http.SetCookie(w, &http.Cookie{
+				Name: "lang", Value: lang, Path: "/", MaxAge: panelLangCookieMaxAge, SameSite: http.SameSiteLaxMode,
+			})
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write(panelPage(panelHTML, app.cfg.Game.Language))
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Vary", "Cookie, Accept-Language")
+		_, _ = w.Write(panelPage(renderPanel(panelHTML, lang), lang))
 	})
 	mux.HandleFunc("/api/status", app.handleStatus)
 	mux.HandleFunc("/api/overview", app.handleOverview)
