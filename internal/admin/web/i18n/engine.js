@@ -11,7 +11,8 @@
 //     patterns  [[/regex/g, "replacement $1"], ...] for strings with values inside
 //     skip      CSS selector whose content is never translated (raw logs, user data)
 //
-// Default language: localStorage "rf4.lang", else window.RF4_DEFAULT_LANG
+// Default language: window.__LANG__ / window.RF4_LANG (set by the server page
+// shell), else localStorage "rf4.lang", else window.RF4_DEFAULT_LANG
 // (injected by the server from game.language), else Chinese.
 (function () {
   "use strict";
@@ -23,6 +24,10 @@
   var SKIP_TAGS = { SCRIPT: 1, STYLE: 1, TEXTAREA: 1, CODE: 1, PRE: 1 };
 
   function currentLang() {
+    // Language decided by the server (?lang= / cookie / game.language) wins:
+    // upstream's own i18n already rendered the page in that language.
+    var srv = window.__LANG__ || window.RF4_LANG;
+    if (srv === "en" || srv === "zh") return srv;
     try { var v = localStorage.getItem(KEY); if (v === "en" || v === "zh") return v; } catch (e) {}
     return window.RF4_DEFAULT_LANG === "en" ? "en" : "zh";
   }
@@ -65,7 +70,8 @@
   }
 
   function addToggle(lang) {
-    if (document.getElementById("rf4LangToggle")) return;
+    // Upstream's ?lang= switcher replaces our button when it is on the page.
+    if (document.getElementById("rf4LangToggle") || document.getElementById("lang-switch")) return;
     var b = document.createElement("button");
     b.type = "button";
     b.id = "rf4LangToggle";
