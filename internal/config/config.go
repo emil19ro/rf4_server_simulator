@@ -332,7 +332,8 @@ func (c *Config) validate() error {
 	if c.SQLite.Path == "" {
 		return fmt.Errorf("sqlite.path 未配置")
 	}
-	if c.Game.Language != LanguageZH && c.Game.Language != LanguageEN {
+	// 空值只出现在未经 Load 直接构造的 Config（Load 已按区域推断），按中文处理。
+	if c.Game.Language != "" && c.Game.Language != LanguageZH && c.Game.Language != LanguageEN {
 		return fmt.Errorf("game.language 只能是 zh 或 en，当前为 %q", c.Game.Language)
 	}
 	if c.Gateway.AdvertisePort == 0 {
