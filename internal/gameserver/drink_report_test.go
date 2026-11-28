@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"rf4server/internal/proto"
 	"rf4server/internal/store"
 )
 
@@ -129,5 +130,100 @@ func TestDrinkReportGatedByFlagAndPush(t *testing.T) {
 	}
 	if text := drinkReportText(len(statuses), time.Duration(statuses[0].RemainingMillis)*time.Millisecond); !strings.Contains(text, "已喝 1 瓶") {
 		t.Fatalf("report text: %q", text)
+	}
+}
+
+// waitDrinkReportPush 从真实 tunnel 连接读取下一条 24/27 酒兴播报，
+// 跳过同连接上的 4/8 应答、2/2 保活和 19/10 邮件通知。
+func waitDrinkReportPush(t *testing.T, h *mailTestSession) string {
+	t.Helper()
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case env, ok := <-h.envelopes:
+			if !ok {
+				t.Fatal("测试隧道已关闭")
+			}
+			if env.Marker != -1 || env.Main != 24 || env.Sub != 27 || env.Expect == nil || *env.Expect != 1 {
+				continue
+			}
+			tree, n, err := proto.DecodeValue(env.Body, 0, h.sess.Table())
+			if err != nil || n != len(env.Body) {
+				t.Fatalf("酒兴播报不可完整解码: n=%d len=%d err=%v", n, len(env.Body), err)
+			}
+			if reason := checkPushArgsStrict(24, 27, tree); reason != "" {
+				t.Fatalf("酒兴播报合同不符: %s", reason)
+			}
+			if tree.ArgCount() != 3 || tree.ArgItem(0).Class != "lfbdbaffeai" {
+				t.Fatalf("酒兴播报形状不符: %+v", tree)
+			}
+			message := tree.ArgItem(0).Field(1)
+			text := message.StrOr()
+			if !strings.HasPrefix(text, "[酒兴]") {
+				t.Fatalf("不是酒兴播报: %q", text)
+			}
+			return text
+		case <-timeout:
+			t.Fatal("未收到酒兴播报 24/27")
+			return ""
+		}
+	}
+}
+
+func TestDrinkReportPushOnItemUseAfterResponse(t *testing.T) {
+	const uid int64 = 1000001
+	s := newDrinkUseTestServer(t)
+	if err := s.DB.KVSet(t.Context(), drinkReportKey(uid), "1"); err != nil {
+		t.Fatal(err)
+	}
+	row := drinkUseTestItem(t, s, "rd_red_vine", 2, 0)
+	h := newMailTestSession(t, s, 1, uid)
+	tree := proto.Args524(proto.U32(0), proto.Guid(row.GUID))
+	body, err := proto.EncodeValue(tree, s.Table())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.handleEnvelopePayload(h.sess,
+		proto.BuildRequestEnvelope(31, 4, 8, append(append([]byte(nil), body...), 0)))
+	if text := waitDrinkReportPush(t, h); !strings.Contains(text, "已喝 1 瓶") {
+		t.Fatalf("喝酒后的播报=%q", text)
+	}
+}
+
+func TestDrinkReportPushOnPeriodicKeepaliveTick(t *testing.T) {
+	const uid int64 = 1000001
+	s := newDrinkUseTestServer(t)
+	s.cfg.KeepaliveIntervalSec = 10 // 只让首拍触发第 6 拍任务，不等待真实 6 拍。
+	if err := s.DB.KVSet(t.Context(), drinkReportKey(uid), "1"); err != nil {
+		t.Fatal(err)
+	}
+	addReportTestBottle(t, s.DB, uid, "spirit", "heartbeat", 12*time.Minute)
+	h := newMailTestSession(t, s, 1, uid)
+	h.sess.keepaliveTicks = 5
+	h.sess.startKeepalive()
+	t.Cleanup(func() { h.sess.Close("drink-report-test") })
+	if text := waitDrinkReportPush(t, h); !strings.Contains(text, "已喝 1 瓶") {
+		t.Fatalf("心跳播报=%q", text)
+	}
+}
+
+func TestDrinkReportPushWhenMenuEnabled(t *testing.T) {
+	const uid int64 = 1000001
+	s := newDrinkUseTestServer(t)
+	addReportTestBottle(t, s.DB, uid, "spirit", "menu", 12*time.Minute)
+	h := newMailTestSession(t, s, 1, uid)
+	tree := proto.Args524(proto.U32(uint32(gearAssistantUID)), proto.StrVal("3 开"))
+	body, err := proto.EncodeValue(tree, s.Table())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.handleEnvelopePayload(h.sess,
+		proto.BuildRequestEnvelope(32, 19, 1, append(append([]byte(nil), body...), 0)))
+	if text := waitDrinkReportPush(t, h); !strings.Contains(text, "已喝 1 瓶") {
+		t.Fatalf("开启菜单后的播报=%q", text)
+	}
+	on, err := readKVFlag(t.Context(), s.DB.SQL, drinkReportKey(uid))
+	if err != nil || !on {
+		t.Fatalf("菜单未保存开关: on=%v err=%v", on, err)
 	}
 }
