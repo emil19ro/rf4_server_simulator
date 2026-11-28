@@ -83,7 +83,12 @@ func (m *MemStore) LookupToken(_ context.Context, token string) (TokenInfo, bool
 	if e, ok := m.tokens[token]; ok && time.Now().After(e.expires) == false {
 		return e.info, true, nil
 	}
-	// 前缀兜底（客户端回传 logintoken=token[:64] 的场景）
+	// 前缀兜底（客户端回传 logintoken=token[:64] 的场景）。
+	// 入口规则与 SQLiteStore.lookupByPrefix 一致：前缀过短或含 LIKE 通配符都不映射，
+	// 保证两种存储对伪造前缀给出同一判定。
+	if len(token) < 8 || hasTokenWildcard(token) {
+		return TokenInfo{}, false, nil
+	}
 	for t, e := range m.tokens {
 		if len(t) > len(token) && strings.HasPrefix(t, token) && time.Now().Before(e.expires) {
 			return e.info, true, nil

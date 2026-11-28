@@ -62,6 +62,7 @@ type FishingState struct {
 	DepthCM        int64
 	CastM          float64
 	CastActive     bool
+	PVAReady       bool
 	CastTS         time.Time
 	FallTS         time.Time
 	FallSeen       bool
@@ -85,6 +86,7 @@ type FishingState struct {
 const fishingStateCols = `
 		uid, COALESCE(gear_guid,''), COALESCE(rig_type,0), COALESCE(loc,''),
 		COALESCE(spot,0), COALESCE(depth_cm,0), COALESCE(cast_m,0), COALESCE(cast_active,0),
+		COALESCE(pva_ready,0),
 		COALESCE(cast_ts_ns,0), COALESCE(fall_ts_ns,0), COALESCE(fall_seen,0),
 		COALESCE(rig_settled,0), COALESCE(tick_seen,0), COALESCE(tick_seq,0),
 		COALESCE(last_anim,0),
@@ -135,10 +137,11 @@ func scanFishingState(row interface{ Scan(...any) error }) (*FishingState, error
 		pushSent int64
 		hooked   int64
 		resolved int64
+		pvaReady int64
 	)
 	err := row.Scan(
 		&st.UID, &st.GearGUID, &st.RigType, &st.Loc, &spot, &st.DepthCM, &st.CastM, &cast,
-		&castNS, &fallNS, &fallSeen, &settled, &tickSeen, &tickSeq, &st.LastAnim,
+		&pvaReady, &castNS, &fallNS, &fallSeen, &settled, &tickSeen, &tickSeq, &st.LastAnim,
 		&pushSent, &hooked, &resolved, &pending, &st.Bait, &st.LastSkill, &armed,
 		&st.BiteSpeed, &st.TrophyLuck, &st.FightTolerance, &biteNS, &st.RodGUID,
 	)
@@ -150,6 +153,7 @@ func scanFishingState(row interface{ Scan(...any) error }) (*FishingState, error
 	}
 	st.Spot = uint64(spot)
 	st.CastActive = cast != 0
+	st.PVAReady = pvaReady != 0
 	st.CastTS = fishingTimeFromNS(castNS)
 	st.FallTS = fishingTimeFromNS(fallNS)
 	st.FallSeen = fallSeen != 0
@@ -193,11 +197,11 @@ func (d *DB) SaveFishingState(ctx context.Context, st *FishingState) error {
 	_, err = d.SQL.ExecContext(ctx, `
 		INSERT INTO fishing_state(
 			uid, gear_guid, rig_type, loc, spot, depth_cm, cast_m, cast_active,
-			cast_ts_ns, fall_ts_ns, fall_seen, rig_settled, tick_seen,
+			pva_ready, cast_ts_ns, fall_ts_ns, fall_seen, rig_settled, tick_seen,
 			tick_seq, last_anim, push_sent, hooked, resolved, pending_json, bait,
 			last_skill, armed_json, bite_speed, trophy_luck, fight_tolerance,
 			bite_at_ns, updated_ts, rod_guid
-		) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(uid,rod_guid) DO UPDATE SET
 			gear_guid=excluded.gear_guid,
 			rig_type=excluded.rig_type,
@@ -206,6 +210,7 @@ func (d *DB) SaveFishingState(ctx context.Context, st *FishingState) error {
 			depth_cm=excluded.depth_cm,
 			cast_m=excluded.cast_m,
 			cast_active=excluded.cast_active,
+			pva_ready=excluded.pva_ready,
 			cast_ts_ns=excluded.cast_ts_ns,
 			fall_ts_ns=excluded.fall_ts_ns,
 			fall_seen=excluded.fall_seen,
@@ -226,7 +231,7 @@ func (d *DB) SaveFishingState(ctx context.Context, st *FishingState) error {
 			bite_at_ns=excluded.bite_at_ns,
 			updated_ts=excluded.updated_ts`,
 		st.UID, st.GearGUID, st.RigType, st.Loc, int64(st.Spot), st.DepthCM, st.CastM,
-		fishingBoolInt(st.CastActive), fishingTimeNS(st.CastTS),
+		fishingBoolInt(st.CastActive), fishingBoolInt(st.PVAReady), fishingTimeNS(st.CastTS),
 		fishingTimeNS(st.FallTS), fishingBoolInt(st.FallSeen),
 		fishingBoolInt(st.RigSettled), fishingBoolInt(st.TickSeen), int64(st.TickSeq), st.LastAnim,
 		fishingBoolInt(st.PushSent), fishingBoolInt(st.Hooked),

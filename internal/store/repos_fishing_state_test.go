@@ -30,6 +30,7 @@ func TestFishingStateRoundTrip(t *testing.T) {
 		Spot:           9876,
 		DepthCM:        375,
 		CastActive:     true,
+		PVAReady:       true,
 		CastTS:         castAt,
 		FallTS:         fallAt,
 		FallSeen:       true,

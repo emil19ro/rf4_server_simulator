@@ -87,6 +87,7 @@ func applyPersistedFishingState(st *FishState, saved *store.FishingState) {
 	st.DepthCM = saved.DepthCM
 	st.CastM = saved.CastM
 	st.CastActive = saved.CastActive
+	st.PVAReady = saved.PVAReady
 	st.CastTs = saved.CastTS
 	st.FallTs = saved.FallTS
 	st.FallSeen = saved.FallSeen
@@ -131,6 +132,7 @@ func fishingStateSnapshot(st *FishState) *store.FishingState {
 		DepthCM:        st.DepthCM,
 		CastM:          st.CastM,
 		CastActive:     st.CastActive,
+		PVAReady:       st.PVAReady,
 		CastTS:         st.CastTs,
 		FallTS:         st.FallTs,
 		FallSeen:       st.FallSeen,

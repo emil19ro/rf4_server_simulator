@@ -19,7 +19,7 @@ import (
 //
 // 条件来源：internal/gameserver/assets/achievement_texts.json，由客户端
 // 4.0.25034 成就列表面板还原的 130 条标题/描述（截图第 N 条对应
-// achievement_def 按 id 升序第 N 个 id）。目前规则表实装 99 条，其余 31 条
+// achievement_def 按 id 升序第 N 个 id）。目前规则表实装 106 条，其余 24 条
 // 依赖服务端尚未实现的功能，在文件末尾按分组留空注释。
 
 type achievementEventKind uint8
@@ -45,8 +45,13 @@ type achievementEvent struct {
 	BaitKey       string  // 本次挖到的饵 item_id
 	CookPoints    float64 // 烹饪熟练度（skill.skill_id=6，0..100）
 	Grade         int64   // 放流鱼档位（1..4，4=蓝冠=超级稀有）
-	Streak        int64   // 连续上鱼数（player_counters.catch_streak，中断即归零）
-	RareReleased  int64   // 累计已放生的稀有鱼条数（player_counters）
+	RodType       int64   // 本竿子类（item_def.attrs_json.fopbhlmkcpe，0=解析失败）
+	ReelType      int64   // 本竿所装轮子类（同字段轮侧枚举，0=无轮/解析失败）
+	// PVALoaded 本杆抛投时钓组上挂着 PVA 棒（品类 30），且入水确实消耗掉一份。
+	// PVA 不是钓组类型（rigmeta.go:rigTypeNames 里没有它），只能按载荷判。
+	PVALoaded    bool
+	Streak       int64 // 连续上鱼数（player_counters.catch_streak，中断即归零）
+	RareReleased int64 // 累计已放生的稀有鱼条数（player_counters）
 }
 
 type achievementRule struct {
@@ -99,6 +104,19 @@ func baitPrefix(ps ...string) func(achievementEvent) bool {
 	}
 }
 
+// rodTypeIs / reelTypeIs 判 item_def.attrs_json.fopbhlmkcpe 的子类：
+// 竿侧 1=纺车 2=枪柄 3=手竿 4=博洛尼亚 5=竞赛 7/8=飞蝇 9=PICKER
+// 10=飞德 11=鲤鱼 12=抽停 13=打窝 14=测竿 15=海竿 16=船竿；
+// 轮侧 1=纺车轮 2=低轮廓抛饵卷线器 3=鼓轮 4=传统轮 5=飞钓轮。
+// 0 表示当场解析失败（无轮手竿、GUID 无效），一律不判。
+func rodTypeIs(rt int64) func(achievementEvent) bool {
+	return func(ev achievementEvent) bool { return ev.RodType == rt }
+}
+
+func reelTypeIs(rt int64) func(achievementEvent) bool {
+	return func(ev achievementEvent) bool { return ev.ReelType == rt }
+}
+
 func recipeIs(id string) func(achievementEvent) bool {
 	return func(ev achievementEvent) bool { return ev.RecipeID == id }
 }
@@ -130,7 +148,9 @@ func cookAtLeast(p float64) func(achievementEvent) bool {
 var achievementRules = []achievementRule{
 	// ---- 101-110 浮钓：按 rigmeta.go 的 rigTypeNames ----
 	{ID: 101, Event: evFishLanded, Check: rigIs(1)},      // 固定浮标 rig_FloatSimple
+	{ID: 102, Event: evFishLanded, Check: rodTypeIs(4)},  // 博洛尼亚竿
 	{ID: 103, Event: evFishLanded, Check: rigIs(2)},      // 博洛尼亚钓组
+	{ID: 104, Event: evFishLanded, Check: rodTypeIs(5)},  // 竞赛竿
 	{ID: 105, Event: evFishLanded, Check: rigIs(21)},     // Waggler 自重漂
 	{ID: 107, Event: evFishLanded, Check: rigIs(4)},      // 饵鱼浮钓
 	{ID: 109, Event: evFishLanded, Check: rigIs(19, 20)}, // Sbirolino
@@ -142,6 +162,8 @@ var achievementRules = []achievementRule{
 	{ID: 153, Event: evFishLanded, Check: baitPrefix("crank", "plug", "hm_minnow", "hm_j_minnow")}, // 鱼形硬饵
 	{ID: 154, Event: evFishLanded, Check: baitPrefix("topwater", "popper")},                        // 表水路亚
 	{ID: 155, Event: evFishLanded, Check: rigIs(10)},                                               // 分支子线
+	{ID: 156, Event: evFishLanded, Check: rodTypeIs(2)},                                            // 枪柄竿
+	{ID: 157, Event: evFishLanded, Check: reelTypeIs(2)},                                           // 抛饵卷线器
 	{ID: 158, Event: evFishLanded, Check: rigIs(8)},                                                // 倒钓组
 	{ID: 159, Event: evFishLanded, Check: rigIs(7)},                                                // 德州
 	{ID: 160, Event: evFishLanded, Check: rigIs(9)},                                                // 卡罗莱纳
@@ -149,13 +171,19 @@ var achievementRules = []achievementRule{
 	{ID: 162, Event: evFishLanded, Check: baitPrefix("jerkbait")},                                  // 抽停硬饵
 
 	// ---- 200-240 底钓/鲤鱼 ----
-	{ID: 200, Event: evFishLanded, Check: rigIs(12)}, // 简易水底
-	{ID: 202, Event: evFishLanded, Check: rigIs(13)}, // 链斗式 Paternoster
-	{ID: 203, Event: evFishLanded, Check: rigIs(14)}, // in-line
-	{ID: 205, Event: evFishLanded, Check: rigIs(15)}, // 环型
-	{ID: 206, Event: evFishLanded, Check: rigIs(18)}, // 诱饵笼 FeedRocket
-	{ID: 207, Event: evFishLanded, Check: rigIs(16)}, // method
-	{ID: 208, Event: evFishLanded, Check: rigIs(17)}, // 饵鱼底部
+	{ID: 200, Event: evFishLanded, Check: rigIs(12)},     // 简易水底
+	{ID: 202, Event: evFishLanded, Check: rigIs(13)},     // 链斗式 Paternoster
+	{ID: 203, Event: evFishLanded, Check: rigIs(14)},     // in-line
+	{ID: 204, Event: evFishLanded, Check: rodTypeIs(9)},  // PICKER 竿
+	{ID: 205, Event: evFishLanded, Check: rigIs(15)},     // 环型
+	{ID: 206, Event: evFishLanded, Check: rigIs(18)},     // 诱饵笼 FeedRocket
+	{ID: 207, Event: evFishLanded, Check: rigIs(16)},     // method
+	{ID: 208, Event: evFishLanded, Check: rigIs(17)},     // 饵鱼底部
+	{ID: 209, Event: evFishLanded, Check: rodTypeIs(11)}, // 鲤鱼竿
+	// 210 抛掷装备 PVA 棒的钓组：PVA 棒是挂在钓组上的饵料载荷（品类 30），
+	// 不是钓组类型，所以不能像 206/211 那样近似成 rigIs；判据是本杆入水确实
+	// 消耗掉一份 PVA 棒，由上鱼事件的装配点从入水扣料回执里带过来。
+	{ID: 210, Event: evFishLanded, Check: func(ev achievementEvent) bool { return ev.PVALoaded }},
 	{ID: 211, Event: evFishLanded, Check: rigIs(23)}, // 测竿 Marker
 	{ID: 212, Event: evFishLanded, Check: rigIs(24)}, // 传统发丝
 	{ID: 213, Event: evFishLanded, Check: rigIs(26)}, // Pop-up
@@ -323,10 +351,10 @@ func (s *Server) evaluateAchievements(ctx *Ctx, ev achievementEvent) {
 }
 
 // ============================================================================
-// 留空成就（31 条）= achievement_def 的 130 个 id − 规则表的 99 条。
+// 留空成就（24 条）= achievement_def 的 130 个 id − 规则表的 106 条。
 // 完整清单与 achievements_registry_test.go 的 unimplementedAchievementIDs 一致：
 //
-//   102, 104, 106, 108, 156, 157, 204, 209, 210,
+//   106, 108,
 //   300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311,
 //   409, 411, 412, 413, 414, 415, 416,
 //   901, 902, 903
@@ -334,14 +362,7 @@ func (s *Server) evaluateAchievements(ctx *Ctx, ev achievementEvent) {
 // 待对应功能落地后，按「绑定事件 + 一个布尔判断」在规则表各补一行即可。
 // 依赖的缺失能力按组说明：
 //
-// 102/104/156/157/204/209 竿型与轮型（博洛尼亚竿、竞赛竿、枪柄竿、
-//   抛饵卷线器、PICKER 竿、鲤鱼竿）：item_def.attrs_json 有
-//   fopbhlmkcpe 竿型/pdcalfjaigf 轮型数据，但成就事件尚未装配这两个字段。
-//
 // 106/108 三明治挂饵、夜光浮标：无「同钩多饵」枚举与发光浮漂标识。
-//
-// 210 抛掷 PVA 棒钓组：无抛投载荷事件（206 抛饵笼、211 测竿已用 rigType
-//   近似实装，不在此清单内）。
 //
 // 251/265/266/267/269/270/271/275 红蚯蚓、地龙、水蛭、蛲螂、土蚕、蝼蛄、
 //   水生甲虫、水藻：原先阻挡它们的是「挖饵池不发这些饵」，现已由 baitdig.go 的
@@ -362,7 +383,11 @@ func (s *Server) evaluateAchievements(ctx *Ctx, ev achievementEvent) {
 //
 // 912 单次放流已实装。
 //
-// ---- 以下已实装，不属于上面 31 条，仅记录近似判定的已知差距 ----
+// ---- 以下已实装，不属于上面 24 条，仅记录近似判定的已知差距 ----
+// 210 抛掷 PVA 棒钓组：PVA 不是钓组类型而是饵料载荷（品类 30），判据取「本杆
+//   入水确实消耗掉一份 PVA 棒」，与 206 抛饵笼/211 测竿的 rigType 近似不同。
+//   局限：只认挂在竿上抛投这一条路径；手动抛投（12/1 手抛）的 PVA 不进本杆
+//   载荷，不解锁。
 // 151/153/154/162 用拟饵 item_id 前缀判断（crank/plug/spoon/spinner/
 //   topwater/popper/jerkbait，以及自制米诺 hm_minnow_*/hm_j_minnow_*）。
 //   静态库无 minnow* 前缀，原规则的 "minnow" 是死分支，已换成真实前缀。

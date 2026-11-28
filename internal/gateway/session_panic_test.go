@@ -169,7 +169,15 @@ func dialRaw(t *testing.T, addr, token string, reconnect bool) net.Conn {
 // 其它会话照常运行，网关继续接受新连接。
 func TestPanicInHandlerIsolated(t *testing.T) {
 	const badToken = "boom|tok|999|1"
-	store := &panicLookupStore{Store: NewMemStore(1), token: badToken}
+	inner := NewMemStore(1)
+	// realtime 认证只认已登记的 token：三个探针 token 都要先签发，
+	// 否则连接会在握手阶段被拒，测不到会话建立之后的路径。
+	for _, tok := range []string{badToken, "good|tok|123|1", "ok|tok|456|1"} {
+		if err := inner.SaveToken(context.Background(), tok, TokenInfo{Userid: 1000001}, time.Hour); err != nil {
+			t.Fatalf("登记探针 token 失败: %v", err)
+		}
+	}
+	store := &panicLookupStore{Store: inner, token: badToken}
 	addr, srv, logs := startRealtimeOnly(t, store)
 
 	good := dialRaw(t, addr, "good|tok|123|1", false)
@@ -218,6 +226,12 @@ func TestPanicInHandlerIsolated(t *testing.T) {
 func TestPanicInWriterIsolated(t *testing.T) {
 	const badToken = "boomw|tok|999|1"
 	inner := NewMemStore(1)
+	// 同上：good 与 bad 都要先签发。
+	for _, tok := range []string{badToken, "good|tok|123|1"} {
+		if err := inner.SaveToken(context.Background(), tok, TokenInfo{Userid: 1000001}, time.Hour); err != nil {
+			t.Fatalf("登记探针 token 失败: %v", err)
+		}
+	}
 	key := []byte(badToken)
 	rc4In, err := proto.NewRC4(key)
 	if err != nil {

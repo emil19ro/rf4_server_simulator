@@ -98,8 +98,11 @@ func TestDeleteHandoffErrorWarnsAndKeepsSession(t *testing.T) {
 		tm.Close()
 	})
 
-	// token 第三段是 uid：未登记的 token 只要格式合法就能通过 realtime 认证。
+	// realtime 认证只认已登记的 token（见 handleConn），探针 token 先签发。
 	const token = "handoff|delete|1000001|probe"
+	if err := inner.SaveToken(context.Background(), token, gateway.TokenInfo{Userid: 1000001}, time.Hour); err != nil {
+		t.Fatalf("登记探针 token 失败: %v", err)
+	}
 
 	// 第一段连接：跑两轮，把 RC4 流与 wire_id 推进出去，断线后写者落库。
 	c := testutil.NewFakeClient(t, rt.RealAddr())

@@ -38,6 +38,7 @@ gateway:
   # 运行参数默认值，钓鱼限制可通过管理后台覆盖。
   token_ttl_days: 365                 # 登录 token 有效期（天）。
   userid_start: 1000001               # 登录服务分配的第一个 user ID。
+  userid_map_file: ""                 # 局域网 IP→userid 映射表路径；留空则用工作目录下的 gateway_ip_uids.json。
   bite_probability: 1.0               # 每次抛竿出鱼的概率；1.0 表示每次都有鱼。
   bite_delay_scale: 1.0               # 标准咬钩延迟分布的倍率。
   bite_delay_fixed: 0                 # 固定咬钩延迟（秒）；大于 0 时不再使用分布。

@@ -201,6 +201,8 @@ type castDistanceProfile struct {
 	CastAction           uint32
 	CastPower            float64
 	ReelType             int64
+	RodType              int64 // 竿子类 fopbhlmkcpe；仅在 RodParsed 为真时有效
+	RodParsed            bool  // 本杆实例与 item_def 都解析成功（竿 GUID 有效）
 	SpoolSize            int64
 	SpoolCapacityM       float64
 	SpoolFill            float64
@@ -582,9 +584,10 @@ func (s *Server) castDistanceForRig(ctx context.Context, uid int64, rodGUID stri
 	if rod, rerr := s.DB.GetItemByGUID(ctx, rodGUID); rerr == nil && rod != nil {
 		if def, derr := s.itemDefForRow(ctx, rod); derr == nil {
 			// 竿型（fopbhlmkcpe）是投距技能的竿侧 gate 输入；无轮手竿也要用。
-			if v, ok := defAttrF64(def, "fopbhlmkcpe"); ok {
-				rodType = int64(v)
-			}
+			// 解析结果顺带记进 p.RodType，供 14/4 上鱼事件判竿型成就，
+			// 避免每杆为成就再多查一次竿定义。
+			rodType = rodDefRodType(def)
+			p.RodType, p.RodParsed = rodType, true
 			p.RodLengthM = rodLengthM(def)
 			p.RodAction = rodAction(def)
 			p.RodStiffness = rodStiffness(def)

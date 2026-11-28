@@ -6,8 +6,6 @@ import (
 	"log/slog"
 	"net"
 	"runtime/debug"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -283,17 +281,16 @@ func (s *RealtimeServer) handleConn(nc net.Conn) {
 		log.Warn("token 校验查询异常，拒绝", "err", err, "reconnect", reconnect)
 		return
 	}
+	// 未登记的 token 一律拒绝：gw_token 里的签发记录是唯一授权依据。
+	// 认证包里的 token 同时是 RC4 密钥，而 proto.validAuthToken 只校验字符集与
+	// 竖线数量，凭格式解析 uid 放行等于允许任何人自选身份接入。
+	//
+	// 客户端回传 logintoken（登录 XML 里的短 token）由正规路径覆盖：签发时
+	// 登记进 gw_token，客户端回传 token 前缀则由 LookupToken 的前缀映射命中。
 	if !found {
-		// 客户端可能回传未登记的 logintoken。只要格式合法（至少 3 个 '|'），
-		// 就从第三段解析 uid 并放行。
-		uid := useridFromTokenStr(token)
-		if uid <= 0 {
-			rtAuthFailures.Inc()
-			log.Warn("token 无法解析 uid，拒绝", "reconnect", reconnect)
-			return
-		}
-		info = TokenInfo{Userid: uid, IssuedAt: time.Now().Unix()}
-		log.Warn("token 未登记，按解析 uid 放行", "uid", uid, "reconnect", reconnect)
+		rtAuthFailures.Inc()
+		log.Warn("token 未登记，拒绝", "token_len", len(token), "reconnect", reconnect)
+		return
 	}
 	log = log.With("userid", info.Userid)
 	log.Info("认证通过",
@@ -496,19 +493,6 @@ func (s *RealtimeServer) handleConn(nc net.Conn) {
 	sess.drain()
 	_ = s.tm.sendClose(sess.id, "session_end")
 	s.log.Info("会话结束", "sid", sess.id, "resumed", sess.resumed)
-}
-
-// useridFromTokenStr 从 4 段 token 第三段解析 uid（解析失败回 0）。
-func useridFromTokenStr(token string) int64 {
-	parts := strings.Split(token, "|")
-	if len(parts) < 3 {
-		return 0
-	}
-	uid, err := strconv.ParseInt(parts[2], 10, 64)
-	if err != nil {
-		return 0
-	}
-	return uid
 }
 
 // handleFrame 处理一个客户端帧；返回 true 表示连接应结束。

@@ -844,6 +844,18 @@ func (s *Server) consumeCastBait(sess *Session, st *FishState) error {
 	if err == nil {
 		sess.pushBaitChange(change)
 		s.depositCastGroundbait(sess, st, change, fmt.Sprintf("%s:%d", rod, cast.UnixNano()))
+		// 本杆入水真正扣掉品类 30 的 PVA 棒，才算「抛掷了装备 PVA 棒的钓组」。
+		// 重放时 consumeBaitEvent 返回的是同一份扣料回执，标记结果一致。
+		pva := false
+		for _, use := range change.Groundbait {
+			if use.Category == catPVAStick {
+				pva = true
+				break
+			}
+		}
+		st.mu.Lock()
+		st.PVAReady = pva
+		st.mu.Unlock()
 	}
 	return err
 }

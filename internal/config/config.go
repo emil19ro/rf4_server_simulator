@@ -65,6 +65,7 @@ type Gateway struct {
 
 	TokenTTL          int     `yaml:"token_ttl_days"`         // 登录 token 有效期（天）
 	UseridStart       int64   `yaml:"userid_start"`           // 自增 userid 起点
+	UseridMapFile     string  `yaml:"userid_map_file"`        // 局域网 IP→userid 映射表路径；空则用工作目录下的 gateway_ip_uids.json
 	BiteProbability   float64 `yaml:"bite_probability"`       // 起竿判出鱼概率（1.0=每杆必出）
 	BiteDelayScale    float64 `yaml:"bite_delay_scale"`       // 咬钩延迟倍率
 	BiteDelayFixed    float64 `yaml:"bite_delay_fixed"`       // 固定咬钩延迟秒（>0 时忽略分布）
@@ -284,6 +285,7 @@ func (c *Config) applyEnvOverrides() {
 	envStr("RF4_GATEWAY_ADVERTISE_HOST", &c.Gateway.AdvertiseHost)
 	envStr("RF4_GATEWAY_CERT", &c.Gateway.CertFile)
 	envStr("RF4_GATEWAY_KEY", &c.Gateway.KeyFile)
+	envStr("RF4_GATEWAY_USERID_MAP_FILE", &c.Gateway.UseridMapFile)
 	envStr("RF4_TUNNEL_ADDR", &c.Gateway.Tunnel.Addr)
 	envStr("RF4_TUNNEL_PSK", &c.Gateway.Tunnel.PSK)
 	envStr("RF4_GAME_TUNNEL_PSK", &c.Game.Tunnel.PSK)

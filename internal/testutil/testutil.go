@@ -28,7 +28,10 @@ const TestPSK = "test-psk"
 type GatewayHandle struct {
 	LoginURL      string
 	LoginPlainURL string
-	RealAddr      string
+	// LoginDisplay 是登录 XML 的原文，供断言 <token> / <logintoken> 这类
+	// 需要区分两个签发凭据的用例使用（Login 只取 token 与 userid）。
+	LoginDisplay string
+	RealAddr     string
 	// Store 是本次装配使用的存储。声明成接口是为了让测试能包一层注入故障
 	// （例如让 LoadHandoff 返回真实错误），而不用改生产代码加测试钩子。
 	Store gateway.Store
@@ -98,7 +101,7 @@ func StartGatewayWithStore(t *testing.T, tunnelAddr, psk string, store gateway.S
 	}
 }
 
-// Login HTTP 登录取 token/userid。
+// Login HTTP 登录取 token/userid；原始 XML 存在 LoginDisplay 里。
 func (g *GatewayHandle) Login(t *testing.T) (token string, userid int64) {
 	t.Helper()
 	tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
@@ -110,6 +113,7 @@ func (g *GatewayHandle) Login(t *testing.T) (token string, userid int64) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	text := string(body)
+	g.LoginDisplay = text
 	if !strings.Contains(text, `<logon success="true">`) {
 		t.Fatalf("登录响应异常: %s", text)
 	}
